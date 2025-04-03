@@ -12,8 +12,17 @@ import numpy as np
 # Setup logging
 logger = logging.getLogger(__name__)
 
-def preprocess_image(image):
-    """Preprocess image for better OCR results"""
+def preprocess_image(image, is_handwritten=False):
+    """
+    Preprocess image for better OCR results
+    
+    Args:
+        image: PIL Image object
+        is_handwritten: Boolean flag to indicate if the image contains handwritten text
+    
+    Returns:
+        Processed PIL Image
+    """
     try:
         # Convert PIL Image to numpy array
         img_array = np.array(image)
@@ -27,14 +36,46 @@ def preprocess_image(image):
             # Convert to grayscale
             gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
         
-        # Apply thresholding to get rid of background noise
-        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        
-        # Apply dilation to make text more solid
-        kernel = np.ones((1, 1), np.uint8)
-        dilated = cv2.dilate(thresh, kernel, iterations=1)
-        
-        return Image.fromarray(dilated)
+        if is_handwritten:
+            # Special processing for handwritten text
+            
+            # Apply Gaussian blur to reduce noise
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            
+            # Apply adaptive thresholding - better for handwritten text with varying intensity
+            thresh = cv2.adaptiveThreshold(
+                blurred, 
+                255, 
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                cv2.THRESH_BINARY_INV, 
+                11,  # Block size
+                2    # Constant subtracted from mean
+            )
+            
+            # Apply morphological operations to clean up the image
+            # Create a kernel for morphological operations
+            kernel = np.ones((2, 2), np.uint8)
+            
+            # Perform closing operation to fill small gaps in text
+            closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+            
+            # Perform opening to remove small noise
+            opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel)
+            
+            # Invert back to black text on white background for OCR
+            processed = cv2.bitwise_not(opened)
+            
+            return Image.fromarray(processed)
+        else:
+            # Standard processing for printed text
+            # Apply thresholding to get rid of background noise
+            _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # Apply dilation to make text more solid
+            kernel = np.ones((1, 1), np.uint8)
+            dilated = cv2.dilate(thresh, kernel, iterations=1)
+            
+            return Image.fromarray(dilated)
     except Exception as e:
         logger.error(f"Error preprocessing image: {e}")
         # Return the original image if preprocessing fails
@@ -43,14 +84,40 @@ def preprocess_image(image):
 def extract_text_from_image(image_path):
     """Extract text from an image file using PyTesseract OCR"""
     try:
+        logger.info(f"Extracting text from image: {image_path}")
         image = Image.open(image_path)
-        # Preprocess the image
-        processed_image = preprocess_image(image)
         
-        # Extract text using PyTesseract
-        text = pytesseract.image_to_string(processed_image)
-        logger.debug(f"Extracted text from image: {len(text)} characters")
-        return text
+        # Try both handwritten and printed text methods and use the one with better results
+        
+        # First try handwritten text processing
+        processed_handwritten = preprocess_image(image, is_handwritten=True)
+        
+        # Use specific OCR configuration for handwritten text
+        custom_config = r'--oem 3 --psm 6'
+        handwritten_text = pytesseract.image_to_string(
+            processed_handwritten,
+            config=custom_config,
+            lang='eng'
+        )
+        
+        # If handwritten text extraction yields little text, try printed text processing
+        if len(handwritten_text.strip()) < 20:
+            logger.info("Handwritten text detection yielded little text. Trying printed text processing.")
+            processed_printed = preprocess_image(image, is_handwritten=False)
+            printed_text = pytesseract.image_to_string(processed_printed)
+            
+            # Use whichever text has more content
+            if len(printed_text) > len(handwritten_text):
+                logger.info("Printed text processing yielded better results.")
+                final_text = printed_text
+            else:
+                logger.info("Handwritten text processing yielded better results.")
+                final_text = handwritten_text
+        else:
+            final_text = handwritten_text
+        
+        logger.debug(f"Extracted text from image: {len(final_text)} characters")
+        return final_text
     except Exception as e:
         logger.error(f"Error extracting text from image: {e}")
         return ""
@@ -83,11 +150,27 @@ def extract_text_from_pdf(pdf_path):
                 )
                 
                 if page and len(page) > 0:
-                    # Preprocess the image
-                    processed_page = preprocess_image(page[0])
+                    # Preprocess the image - assume handwritten as default for better recognition
+                    processed_page = preprocess_image(page[0], is_handwritten=True)
                     
-                    # Extract text from the page
-                    text = pytesseract.image_to_string(processed_page)
+                    # Use specific OCR configuration for handwritten text 
+                    # Using PSM 6 (assumes a single uniform block of text)
+                    # and an OEM 3 (default) for the best accuracy
+                    custom_config = r'--oem 3 --psm 6'
+                    
+                    # Extract text using PyTesseract with custom configuration
+                    text = pytesseract.image_to_string(
+                        processed_page,
+                        config=custom_config,
+                        lang='eng'  # Explicitly use English language
+                    )
+                    
+                    # If text extraction fails or returns very little text, try again with printed text processing
+                    if len(text.strip()) < 10:
+                        logger.info(f"Handwritten text detection yielded little text. Trying printed text processing for page {page_num}")
+                        processed_page = preprocess_image(page[0], is_handwritten=False) 
+                        text = pytesseract.image_to_string(processed_page)
+                    
                     full_text += f"\n--- Page {page_num} ---\n{text}\n"
                     
                     # Free memory
@@ -116,11 +199,25 @@ def extract_text_from_pdf(pdf_path):
         # Return a more explicit error message for troubleshooting
         return f"[Error processing PDF: {str(e)}]"
 
-def process_file(file_path):
-    """Process an uploaded file (PDF or image) to extract text"""
+def process_file(file_path, is_handwritten=True):
+    """
+    Process an uploaded file (PDF or image) to extract text
+    
+    Args:
+        file_path: Path to the file to process
+        is_handwritten: Boolean indicating if the document contains handwritten text
+                      Default is True to enable handwritten text optimizations
+    
+    Returns:
+        Extracted text from the file
+    """
     file_ext = os.path.splitext(file_path)[1].lower()
     
+    # Log the processing attempt
+    logger.info(f"Processing file: {file_path} (Handwritten: {is_handwritten})")
+    
     if file_ext == '.pdf':
+        # For PDFs, we've integrated handwritten detection in the function itself
         return extract_text_from_pdf(file_path)
     elif file_ext in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']:
         return extract_text_from_image(file_path)

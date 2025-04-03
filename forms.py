@@ -40,3 +40,4 @@ class SubmissionForm(FlaskForm):
         FileRequired(),
         FileAllowed(['pdf', 'jpg', 'jpeg', 'png'], 'Only PDF and image files are allowed!')
     ])
+    is_handwritten = BooleanField('This is a handwritten answer paper', default=True)

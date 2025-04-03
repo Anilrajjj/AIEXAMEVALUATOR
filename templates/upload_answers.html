@@ -92,6 +92,16 @@
               <small class="form-text text-muted">Upload a PDF or image file of the student's answer paper.</small>
             </div>
             
+            <div class="mb-3 form-check">
+              {{ form.is_handwritten(class="form-check-input", id="is_handwritten") }}
+              <label class="form-check-label" for="is_handwritten">
+                {{ form.is_handwritten.label.text }}
+              </label>
+              <div class="form-text">
+                Check this option if the answer paper contains handwritten text for enhanced recognition.
+              </div>
+            </div>
+            
             <div class="preview-container">
               <canvas id="preview-canvas" class="preview-canvas"></canvas>
             </div>
@@ -106,9 +116,13 @@
         <div class="card-footer">
           <div class="alert alert-info mb-0">
             <h6 class="alert-heading">Processing Information</h6>
-            <p class="mb-0 small">
+            <p class="small">
               The system will perform OCR on the uploaded file, extract text, and evaluate the answers based on the answer keys provided. 
               This process may take a few moments depending on the file size and complexity.
+            </p>
+            <p class="mb-0 small">
+              <i class="fas fa-lightbulb me-1"></i><strong>New Feature:</strong> 
+              Enhanced handwritten text recognition is now available! Check the "handwritten" option for improved accuracy on handwritten papers.
             </p>
           </div>
         </div>

@@ -183,10 +183,22 @@ def upload_answers(exam_id):
             file_path = save_uploaded_file(upload_file, upload_folder)
             current_app.logger.debug(f"File saved at: {file_path}")
             
-            # Process the file (OCR) with proper error handling
+            # Process the file (OCR) with proper error handling and handwritten text detection
             try:
-                extracted_text = process_file(file_path)
+                # Get the handwritten flag from the form (default is True if not specified)
+                is_handwritten = form.is_handwritten.data if hasattr(form, 'is_handwritten') else True
+                current_app.logger.info(f"Processing file with handwritten mode: {is_handwritten}")
+                
+                # Process the file with the specified handwritten mode
+                extracted_text = process_file(file_path, is_handwritten=is_handwritten)
                 current_app.logger.debug(f"Text extraction complete. Text length: {len(extracted_text)}")
+                
+                # If we got very little text, try the opposite mode as a fallback
+                if len(extracted_text.strip()) < 50 and not extracted_text.startswith('[Error'):
+                    opposite_mode = not is_handwritten
+                    current_app.logger.info(f"Initial extraction yielded little text. Trying {'' if opposite_mode else 'non-'}handwritten mode.")
+                    extracted_text = process_file(file_path, is_handwritten=opposite_mode)
+                    current_app.logger.debug(f"Fallback text extraction complete. Text length: {len(extracted_text)}")
                 
                 if not extracted_text or extracted_text.startswith('[Error'):
                     error_msg = "Could not extract text from the uploaded file."
