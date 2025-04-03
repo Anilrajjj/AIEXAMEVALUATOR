@@ -1,0 +1,74 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+  <div class="col-md-6">
+    <div class="card shadow">
+      <div class="card-header">
+        <h3 class="card-title mb-0 text-center">
+          <i class="fas fa-sign-in-alt me-2"></i>Login
+        </h3>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('auth.login') }}">
+          {{ form.hidden_tag() }}
+          
+          <div class="mb-3">
+            <label for="email" class="form-label">Email Address</label>
+            {{ form.email(class="form-control", id="email", placeholder="Enter your email") }}
+            {% if form.email.errors %}
+              <div class="text-danger">
+                {% for error in form.email.errors %}
+                  <small>{{ error }}</small>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+          
+          <div class="mb-3">
+            <label for="password" class="form-label">Password</label>
+            {{ form.password(class="form-control", id="password", placeholder="Enter your password") }}
+            {% if form.password.errors %}
+              <div class="text-danger">
+                {% for error in form.password.errors %}
+                  <small>{{ error }}</small>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+          
+          <div class="mb-3 form-check">
+            {{ form.remember_me(class="form-check-input", id="remember_me") }}
+            <label class="form-check-label" for="remember_me">Remember Me</label>
+          </div>
+          
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="fas fa-sign-in-alt me-2"></i>Login
+            </button>
+          </div>
+        </form>
+      </div>
+      <div class="card-footer text-center">
+        <p class="mb-0">Don't have an account? <a href="{{ url_for('auth.register') }}">Register here</a></p>
+      </div>
+    </div>
+    
+    <div class="card mt-4">
+      <div class="card-body">
+        <h5 class="card-title">About AI Exam Evaluator</h5>
+        <p class="card-text">
+          This system uses advanced OCR and NLP technologies to automatically evaluate student exam papers. 
+          Faculty members can create exams, upload answer keys, and process student answer sheets efficiently.
+        </p>
+        <ul class="list-group list-group-flush">
+          <li class="list-group-item">Upload exam questions and answer keys</li>
+          <li class="list-group-item">Process student answer papers (PDF/Image format)</li>
+          <li class="list-group-item">Automated grading using AI techniques</li>
+          <li class="list-group-item">Comprehensive evaluation reports</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

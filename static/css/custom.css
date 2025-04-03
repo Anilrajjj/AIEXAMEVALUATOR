@@ -1,0 +1,115 @@
+/* Custom styling for the exam evaluation system */
+
+/* Keyword highlighting */
+.keyword-highlight {
+  background-color: rgba(255, 255, 0, 0.3);
+  font-weight: bold;
+}
+
+/* Score indicators */
+.score-high {
+  color: #28a745;
+}
+
+.score-medium {
+  color: #ffc107;
+}
+
+.score-low {
+  color: #dc3545;
+}
+
+/* Answer feedback */
+.answer-feedback {
+  border-left: 3px solid #17a2b8;
+  padding: 10px;
+  margin: 10px 0;
+  background-color: rgba(23, 162, 184, 0.1);
+}
+
+/* File upload preview area */
+.preview-container {
+  max-width: 100%;
+  margin-top: 15px;
+  border: 1px dashed #6c757d;
+  padding: 10px;
+  min-height: 200px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.preview-canvas {
+  max-width: 100%;
+}
+
+/* Statistics card */
+.stat-card {
+  text-align: center;
+  padding: 20px;
+  border-radius: 5px;
+  margin-bottom: 20px;
+  transition: transform 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-5px);
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: bold;
+}
+
+.stat-label {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+}
+
+/* Chart containers */
+.chart-container {
+  position: relative;
+  height: 300px;
+  margin-bottom: 30px;
+}
+
+/* Question list styling */
+.question-list {
+  margin-bottom: 20px;
+}
+
+.question-item {
+  padding: 15px;
+  margin-bottom: 10px;
+  border-radius: 5px;
+}
+
+.question-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* Dashboard exam cards */
+.exam-card {
+  margin-bottom: 20px;
+  transition: transform 0.2s;
+}
+
+.exam-card:hover {
+  transform: translateY(-5px);
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 767.98px) {
+  .stat-value {
+    font-size: 1.5rem;
+  }
+  
+  .stat-label {
+    font-size: 0.8rem;
+  }
+  
+  .chart-container {
+    height: 250px;
+  }
+}

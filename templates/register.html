@@ -1,0 +1,94 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+  <div class="col-md-6">
+    <div class="card shadow">
+      <div class="card-header">
+        <h3 class="card-title mb-0 text-center">
+          <i class="fas fa-user-plus me-2"></i>Register
+        </h3>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('auth.register') }}">
+          {{ form.hidden_tag() }}
+          
+          <div class="mb-3">
+            <label for="username" class="form-label">Username</label>
+            {{ form.username(class="form-control", id="username", placeholder="Choose a username") }}
+            {% if form.username.errors %}
+              <div class="text-danger">
+                {% for error in form.username.errors %}
+                  <small>{{ error }}</small>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+          
+          <div class="mb-3">
+            <label for="email" class="form-label">Email Address</label>
+            {{ form.email(class="form-control", id="email", placeholder="Enter your email") }}
+            {% if form.email.errors %}
+              <div class="text-danger">
+                {% for error in form.email.errors %}
+                  <small>{{ error }}</small>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+          
+          <div class="mb-3">
+            <label for="password" class="form-label">Password</label>
+            {{ form.password(class="form-control", id="password", placeholder="Create a password") }}
+            {% if form.password.errors %}
+              <div class="text-danger">
+                {% for error in form.password.errors %}
+                  <small>{{ error }}</small>
+                {% endfor %}
+              </div>
+            {% endif %}
+            <small class="form-text text-muted">Password must be at least 8 characters long.</small>
+          </div>
+          
+          <div class="mb-3">
+            <label for="confirm_password" class="form-label">Confirm Password</label>
+            {{ form.confirm_password(class="form-control", id="confirm_password", placeholder="Confirm your password") }}
+            {% if form.confirm_password.errors %}
+              <div class="text-danger">
+                {% for error in form.confirm_password.errors %}
+                  <small>{{ error }}</small>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+          
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="fas fa-user-plus me-2"></i>Register
+            </button>
+          </div>
+        </form>
+      </div>
+      <div class="card-footer text-center">
+        <p class="mb-0">Already have an account? <a href="{{ url_for('auth.login') }}">Login here</a></p>
+      </div>
+    </div>
+    
+    <div class="card mt-4">
+      <div class="card-body">
+        <h5 class="card-title">Why Join as a Faculty Member?</h5>
+        <p class="card-text">
+          As a registered faculty member, you'll be able to create exams, define answer keys, and 
+          automatically evaluate student answer papers using our AI-powered system.
+        </p>
+        <ul class="list-group list-group-flush">
+          <li class="list-group-item">Save time on manual grading</li>
+          <li class="list-group-item">Get consistent and objective evaluations</li>
+          <li class="list-group-item">Generate detailed insights and analytics</li>
+          <li class="list-group-item">Identify common misconceptions among students</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

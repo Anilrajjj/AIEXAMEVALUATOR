@@ -1,0 +1,346 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container">
+  <!-- Heading and navigation -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h2">
+      {% if exam %}
+        <i class="fas fa-edit me-2"></i>Edit Exam: {{ exam.title }}
+      {% elif question %}
+        <i class="fas fa-question-circle me-2"></i>Edit Question
+      {% else %}
+        <i class="fas fa-plus-circle me-2"></i>Create New Exam
+      {% endif %}
+    </h1>
+    
+    {% if exam %}
+    <div>
+      <a href="{{ url_for('exam.dashboard') }}" class="btn btn-outline-secondary me-2">
+        <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
+      </a>
+      <a href="{{ url_for('exam.upload_answers', exam_id=exam.id) }}" class="btn btn-success">
+        <i class="fas fa-upload me-1"></i>Upload Answers
+      </a>
+    </div>
+    {% endif %}
+  </div>
+  
+  <!-- If editing existing exam -->
+  {% if exam %}
+    <div class="row">
+      <!-- Left column: Exam details form -->
+      <div class="col-md-5">
+        <div class="card shadow-sm mb-4">
+          <div class="card-header">
+            <h5 class="card-title mb-0">Exam Details</h5>
+          </div>
+          <div class="card-body">
+            <form method="POST" action="{{ url_for('exam.edit_exam', exam_id=exam.id) }}">
+              {{ exam_form.hidden_tag() }}
+              
+              <div class="mb-3">
+                <label for="title" class="form-label">Exam Title</label>
+                {{ exam_form.title(class="form-control", id="title") }}
+                {% if exam_form.title.errors %}
+                  <div class="text-danger">
+                    {% for error in exam_form.title.errors %}
+                      <small>{{ error }}</small>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+              
+              <div class="mb-3">
+                <label for="description" class="form-label">Description</label>
+                {{ exam_form.description(class="form-control", id="description", rows=3) }}
+                {% if exam_form.description.errors %}
+                  <div class="text-danger">
+                    {% for error in exam_form.description.errors %}
+                      <small>{{ error }}</small>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+              
+              <div class="d-grid">
+                <button type="submit" name="update_exam" class="btn btn-primary">
+                  <i class="fas fa-save me-1"></i>Update Exam Details
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+        
+        <!-- Display exam statistics if questions and submissions exist -->
+        {% if questions and exam.submissions %}
+          <div class="card shadow-sm mb-4">
+            <div class="card-header">
+              <h5 class="card-title mb-0">Quick Stats</h5>
+            </div>
+            <div class="card-body">
+              <div class="row text-center">
+                <div class="col-6">
+                  <h3>{{ questions|length }}</h3>
+                  <p class="text-muted">Questions</p>
+                </div>
+                <div class="col-6">
+                  <h3>{{ exam.submissions|length }}</h3>
+                  <p class="text-muted">Submissions</p>
+                </div>
+              </div>
+              <hr>
+              <p class="mb-1">Average Score: 
+                {% if exam.submissions %}
+                  {% set avg_score = exam.submissions|map(attribute='total_score')|sum / exam.submissions|length %}
+                  <span class="
+                    {% if avg_score >= 75 %}text-success{% elif avg_score >= 50 %}text-warning{% else %}text-danger{% endif %}
+                  ">{{ avg_score|round(2) }}</span>
+                {% else %}
+                  <span class="text-muted">No data</span>
+                {% endif %}
+              </p>
+              <a href="{{ url_for('report.exam_reports', exam_id=exam.id) }}" class="btn btn-sm btn-outline-info w-100 mt-2">
+                <i class="fas fa-chart-bar me-1"></i>View Detailed Reports
+              </a>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+      
+      <!-- Right column: Questions management -->
+      <div class="col-md-7">
+        {% if question %}
+          <!-- Edit existing question -->
+          <div class="card shadow-sm mb-4">
+            <div class="card-header">
+              <h5 class="card-title mb-0">Edit Question</h5>
+            </div>
+            <div class="card-body">
+              <form method="POST" action="{{ url_for('exam.edit_question', exam_id=exam.id, question_id=question.id) }}">
+                {{ question_form.hidden_tag() }}
+                
+                <div class="mb-3">
+                  <label for="text" class="form-label">Question Text</label>
+                  {{ question_form.text(class="form-control", id="text", rows=3) }}
+                  {% if question_form.text.errors %}
+                    <div class="text-danger">
+                      {% for error in question_form.text.errors %}
+                        <small>{{ error }}</small>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                </div>
+                
+                <div class="mb-3">
+                  <label for="answer_key" class="form-label">Answer Key</label>
+                  {{ question_form.answer_key(class="form-control", id="answer_key", rows=3) }}
+                  {% if question_form.answer_key.errors %}
+                    <div class="text-danger">
+                      {% for error in question_form.answer_key.errors %}
+                        <small>{{ error }}</small>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                </div>
+                
+                <div class="row">
+                  <div class="col-md-6 mb-3">
+                    <label for="question_type" class="form-label">Question Type</label>
+                    {{ question_form.question_type(class="form-control", id="question_type") }}
+                  </div>
+                  <div class="col-md-6 mb-3">
+                    <label for="max_score" class="form-label">Maximum Score</label>
+                    {{ question_form.max_score(class="form-control", id="max_score", type="number", step="0.5") }}
+                  </div>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="keywords" class="form-label">Keywords (comma separated)</label>
+                  {{ question_form.keywords(class="form-control", id="keywords", placeholder="Enter keywords that should appear in correct answers") }}
+                  <small class="form-text text-muted">These keywords will be used for evaluation.</small>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="order" class="form-label">Order</label>
+                  {{ question_form.order(class="form-control", id="order", type="number") }}
+                  <small class="form-text text-muted">Determines the order of questions in the exam.</small>
+                </div>
+                
+                <div class="d-flex justify-content-between">
+                  <a href="{{ url_for('exam.edit_exam', exam_id=exam.id) }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-times me-1"></i>Cancel
+                  </a>
+                  <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save me-1"></i>Save Question
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        {% else %}
+          <!-- Add new question -->
+          <div class="card shadow-sm mb-4">
+            <div class="card-header">
+              <h5 class="card-title mb-0">Add New Question</h5>
+            </div>
+            <div class="card-body">
+              <form method="POST" action="{{ url_for('exam.edit_exam', exam_id=exam.id) }}">
+                {{ question_form.hidden_tag() }}
+                
+                <div class="mb-3">
+                  <label for="text" class="form-label">Question Text</label>
+                  {{ question_form.text(class="form-control", id="text", rows=3, placeholder="Enter the question text") }}
+                  {% if question_form.text.errors %}
+                    <div class="text-danger">
+                      {% for error in question_form.text.errors %}
+                        <small>{{ error }}</small>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                </div>
+                
+                <div class="mb-3">
+                  <label for="answer_key" class="form-label">Answer Key</label>
+                  {{ question_form.answer_key(class="form-control", id="answer_key", rows=3, placeholder="Enter the model answer or solution") }}
+                  {% if question_form.answer_key.errors %}
+                    <div class="text-danger">
+                      {% for error in question_form.answer_key.errors %}
+                        <small>{{ error }}</small>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                </div>
+                
+                <div class="row">
+                  <div class="col-md-6 mb-3">
+                    <label for="question_type" class="form-label">Question Type</label>
+                    {{ question_form.question_type(class="form-control", id="question_type") }}
+                  </div>
+                  <div class="col-md-6 mb-3">
+                    <label for="max_score" class="form-label">Maximum Score</label>
+                    {{ question_form.max_score(class="form-control", id="max_score", type="number", step="0.5") }}
+                  </div>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="keywords" class="form-label">Keywords (comma separated)</label>
+                  {{ question_form.keywords(class="form-control", id="keywords", placeholder="Enter keywords that should appear in correct answers") }}
+                  <small class="form-text text-muted">These keywords will be used for evaluation.</small>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="order" class="form-label">Order</label>
+                  {{ question_form.order(class="form-control", id="order", type="number") }}
+                  <small class="form-text text-muted">Determines the order of questions in the exam.</small>
+                </div>
+                
+                <div class="d-grid">
+                  <button type="submit" name="add_question" class="btn btn-success">
+                    <i class="fas fa-plus me-1"></i>Add Question
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        {% endif %}
+        
+        <!-- Display existing questions -->
+        {% if questions %}
+          <div class="card shadow-sm">
+            <div class="card-header">
+              <h5 class="card-title mb-0">Exam Questions</h5>
+            </div>
+            <div class="card-body">
+              <div class="list-group question-list">
+                {% for q in questions|sort(attribute='order') %}
+                  <div class="list-group-item question-item">
+                    <div class="d-flex justify-content-between">
+                      <h6 class="mb-1">Question {{ q.order + 1 }}</h6>
+                      <span class="badge bg-primary">{{ q.max_score }} points</span>
+                    </div>
+                    <p class="mb-1">{{ q.text|truncate(100) }}</p>
+                    <small class="text-muted">
+                      Answer Key: {{ q.answer_key|truncate(50) }}
+                    </small>
+                    <div class="mt-2 question-actions">
+                      <a href="{{ url_for('exam.edit_question', exam_id=exam.id, question_id=q.id) }}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-edit me-1"></i>Edit
+                      </a>
+                      <form action="{{ url_for('exam.delete_question', exam_id=exam.id, question_id=q.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this question?');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                          <i class="fas fa-trash me-1"></i>Delete
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <!-- Create new exam form -->
+    <div class="card shadow-sm">
+      <div class="card-header">
+        <h5 class="card-title mb-0">Create New Exam</h5>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('exam.create_exam') }}">
+          {{ form.hidden_tag() }}
+          
+          <div class="mb-3">
+            <label for="title" class="form-label">Exam Title</label>
+            {{ form.title(class="form-control", id="title", placeholder="Enter exam title") }}
+            {% if form.title.errors %}
+              <div class="text-danger">
+                {% for error in form.title.errors %}
+                  <small>{{ error }}</small>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+          
+          <div class="mb-3">
+            <label for="description" class="form-label">Description (Optional)</label>
+            {{ form.description(class="form-control", id="description", rows=3, placeholder="Enter exam description") }}
+            {% if form.description.errors %}
+              <div class="text-danger">
+                {% for error in form.description.errors %}
+                  <small>{{ error }}</small>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+          
+          <div class="d-flex justify-content-between">
+            <a href="{{ url_for('exam.dashboard') }}" class="btn btn-outline-secondary">
+              <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
+            </a>
+            <button type="submit" class="btn btn-primary">
+              <i class="fas fa-plus-circle me-1"></i>Create Exam
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    
+    <div class="card shadow-sm mt-4">
+      <div class="card-header">
+        <h5 class="card-title mb-0">How to Create an Exam</h5>
+      </div>
+      <div class="card-body">
+        <ol class="mb-0">
+          <li class="mb-2">Create the exam by entering a title and optional description.</li>
+          <li class="mb-2">Add questions to the exam, including the question text and answer key.</li>
+          <li class="mb-2">For each question, specify the maximum score and question type.</li>
+          <li class="mb-2">Add keywords that should appear in a correct answer for better evaluation.</li>
+          <li class="mb-2">Once you've added all questions, you can upload student answer papers for evaluation.</li>
+        </ol>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
