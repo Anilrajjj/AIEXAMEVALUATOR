@@ -82,45 +82,84 @@ def preprocess_image(image, is_handwritten=False):
         return image
 
 def extract_text_from_image(image_path):
-    """Extract text from an image file using PyTesseract OCR"""
+    """Extract text from an image file using PyTesseract OCR, with memory optimizations"""
     try:
         logger.info(f"Extracting text from image: {image_path}")
-        image = Image.open(image_path)
         
-        # Try both handwritten and printed text methods and use the one with better results
-        
-        # First try handwritten text processing
-        processed_handwritten = preprocess_image(image, is_handwritten=True)
-        
-        # Use specific OCR configuration for handwritten text
-        custom_config = r'--oem 3 --psm 6'
-        handwritten_text = pytesseract.image_to_string(
-            processed_handwritten,
-            config=custom_config,
-            lang='eng'
-        )
-        
-        # If handwritten text extraction yields little text, try printed text processing
-        if len(handwritten_text.strip()) < 20:
-            logger.info("Handwritten text detection yielded little text. Trying printed text processing.")
-            processed_printed = preprocess_image(image, is_handwritten=False)
-            printed_text = pytesseract.image_to_string(processed_printed)
+        # Load and resize the image to save memory
+        try:
+            image = Image.open(image_path)
             
-            # Use whichever text has more content
-            if len(printed_text) > len(handwritten_text):
-                logger.info("Printed text processing yielded better results.")
-                final_text = printed_text
-            else:
-                logger.info("Handwritten text processing yielded better results.")
-                final_text = handwritten_text
-        else:
-            final_text = handwritten_text
+            # Resize large images to reduce memory usage
+            width, height = image.size
+            if width > 1000 or height > 1000:
+                # Calculate new dimensions while maintaining aspect ratio
+                if width > height:
+                    new_width = 1000
+                    new_height = int(height * (new_width / width))
+                else:
+                    new_height = 1000
+                    new_width = int(width * (new_height / height))
+                
+                logger.info(f"Resizing image from {width}x{height} to {new_width}x{new_height} to save memory")
+                image = image.resize((new_width, new_height))
+        except Exception as img_err:
+            logger.error(f"Error loading or resizing image: {img_err}")
+            return f"[Error loading image: {str(img_err)}]"
         
-        logger.debug(f"Extracted text from image: {len(final_text)} characters")
-        return final_text
+        # Process with more memory-efficient settings
+        try:
+            # Use memory-efficient OCR configuration
+            # OEM 1: Legacy Tesseract engine (less memory intensive)
+            # PSM 6: Assume a single uniform block of text
+            custom_config = r'--oem 1 --psm 6'
+            
+            # Process with handwritten mode if specified
+            processed_image = preprocess_image(image, is_handwritten=True)
+            
+            # Extract text with timeout to prevent process hanging
+            text = pytesseract.image_to_string(
+                processed_image,
+                config=custom_config,
+                lang='eng',
+                timeout=30
+            )
+            
+            # Clean up resources immediately
+            del processed_image
+            
+            if len(text.strip()) < 20:
+                logger.info("Handwritten text detection yielded little text. Trying printed text processing.")
+                # Try again with printed text mode
+                processed_image = preprocess_image(image, is_handwritten=False)
+                alt_text = pytesseract.image_to_string(
+                    processed_image,
+                    config=custom_config,
+                    lang='eng',
+                    timeout=30
+                )
+                
+                # Use the better result
+                if len(alt_text.strip()) > len(text.strip()):
+                    logger.info("Printed text processing yielded better results.")
+                    text = alt_text
+                
+                # Clean up
+                del processed_image
+            
+            # Clean up the original image
+            del image
+            
+            logger.debug(f"Extracted text from image: {len(text)} characters")
+            return text
+            
+        except Exception as ocr_err:
+            logger.error(f"OCR error: {ocr_err}")
+            return f"[OCR processing error: {str(ocr_err)}]"
+            
     except Exception as e:
         logger.error(f"Error extracting text from image: {e}")
-        return ""
+        return f"[Error processing image: {str(e)}]"
 
 def extract_text_from_pdf(pdf_path):
     """Extract text from a PDF file using PDF2Image and PyTesseract"""
@@ -129,53 +168,108 @@ def extract_text_from_pdf(pdf_path):
         # Set dpi lower to save memory but still get readable text
         logger.debug(f"Processing PDF: {pdf_path}")
         
+        # First try direct text extraction (much faster and less memory intensive if possible)
+        try:
+            # Using pdfminer.six for direct text extraction
+            from pdfminer.high_level import extract_text
+            from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
+            from pdfminer.converter import TextConverter
+            from pdfminer.layout import LAParams
+            from pdfminer.pdfpage import PDFPage
+            from io import StringIO
+            
+            # Extract text directly from PDF using pdfminer
+            extracted_text = extract_text(pdf_path)
+            
+            if extracted_text and len(extracted_text.strip()) > 100:
+                logger.info(f"Successfully extracted text directly from PDF, skipping OCR")
+                return extracted_text
+                
+            # If direct extraction failed, try with more detailed settings
+            with open(pdf_path, 'rb') as pdf_file:
+                resource_manager = PDFResourceManager()
+                output_string = StringIO()
+                codec = 'utf-8'
+                laparams = LAParams()
+                converter = TextConverter(resource_manager, output_string, codec=codec, laparams=laparams)
+                interpreter = PDFPageInterpreter(resource_manager, converter)
+                
+                for page in PDFPage.get_pages(pdf_file, check_extractable=False):
+                    interpreter.process_page(page)
+                
+                alternative_text = output_string.getvalue()
+                
+                if alternative_text and len(alternative_text.strip()) > 100:
+                    logger.info(f"Successfully extracted text with alternative method, skipping OCR")
+                    return alternative_text
+                
+            logger.info("Direct text extraction yielded insufficient results, proceeding with OCR")
+        except Exception as pdf_ex:
+            logger.info(f"Direct text extraction failed: {pdf_ex}. Proceeding with OCR.")
+            
         # Try to get the number of pages
         info = pdf2image.pdfinfo_from_path(pdf_path)
         num_pages = info["Pages"]
         logger.debug(f"PDF contains {num_pages} pages")
         
+        # Limit page processing to avoid memory issues
+        max_pages = min(num_pages, 10)  # Process at most 10 pages to avoid memory issues
+        if num_pages > max_pages:
+            logger.warning(f"PDF has {num_pages} pages, limiting processing to first {max_pages} pages")
+        
         full_text = ""
         # Process one page at a time instead of loading all pages at once
-        for page_num in range(1, num_pages + 1):
+        for page_num in range(1, max_pages + 1):
             try:
                 # Lower dpi to save memory
                 page = pdf2image.convert_from_path(
                     pdf_path, 
                     first_page=page_num, 
                     last_page=page_num,
-                    dpi=150,  # Lower DPI
+                    dpi=100,  # Even lower DPI to save memory
                     thread_count=1,  # Single thread
                     use_cropbox=True,
-                    grayscale=True  # Use grayscale to reduce memory
+                    grayscale=True,  # Use grayscale to reduce memory
+                    size=(800, None)  # Resize to lower resolution
                 )
                 
                 if page and len(page) > 0:
-                    # Preprocess the image - assume handwritten as default for better recognition
-                    processed_page = preprocess_image(page[0], is_handwritten=True)
-                    
-                    # Use specific OCR configuration for handwritten text 
-                    # Using PSM 6 (assumes a single uniform block of text)
-                    # and an OEM 3 (default) for the best accuracy
-                    custom_config = r'--oem 3 --psm 6'
-                    
-                    # Extract text using PyTesseract with custom configuration
-                    text = pytesseract.image_to_string(
-                        processed_page,
-                        config=custom_config,
-                        lang='eng'  # Explicitly use English language
-                    )
-                    
-                    # If text extraction fails or returns very little text, try again with printed text processing
-                    if len(text.strip()) < 10:
-                        logger.info(f"Handwritten text detection yielded little text. Trying printed text processing for page {page_num}")
-                        processed_page = preprocess_image(page[0], is_handwritten=False) 
-                        text = pytesseract.image_to_string(processed_page)
-                    
-                    full_text += f"\n--- Page {page_num} ---\n{text}\n"
-                    
-                    # Free memory
-                    del page
-                    del processed_page
+                    try:
+                        # Process with reduced complexity for memory efficiency
+                        # Resize the image to reduce memory usage
+                        img = page[0]
+                        width, height = img.size
+                        if width > 1000:
+                            # Downscale large images to save memory
+                            new_width = 1000
+                            new_height = int(height * (new_width / width))
+                            img = img.resize((new_width, new_height))
+                        
+                        # Preprocess the image with specified mode
+                        processed_page = preprocess_image(img, is_handwritten=True)
+                        
+                        # Use a simpler OCR configuration to reduce memory usage
+                        # PSM 6: Assume a single uniform block of text
+                        # OEM 1: Use the legacy Tesseract engine which is more memory efficient
+                        custom_config = r'--oem 1 --psm 6'
+                        
+                        # Extract text using PyTesseract with timeout to prevent hanging
+                        text = pytesseract.image_to_string(
+                            processed_page,
+                            config=custom_config,
+                            lang='eng',  # Explicitly use English language
+                            timeout=30   # Set timeout to prevent process hanging
+                        )
+                        
+                        full_text += f"\n--- Page {page_num} ---\n{text}\n"
+                    except Exception as ocr_error:
+                        logger.error(f"OCR error on page {page_num}: {ocr_error}")
+                        full_text += f"\n--- Page {page_num} ---\n[OCR processing error]\n"
+                    finally:
+                        # Free memory immediately
+                        del processed_page
+                        del img
+                        del page
                 else:
                     logger.warning(f"No image returned for page {page_num}")
             except Exception as page_error:
