@@ -109,41 +109,119 @@ def evaluate_answer(student_answer, answer_key, keywords=None, question_type='te
     Evaluate a student's answer against the answer key
     Returns a tuple of (similarity_score, keyword_score, feedback)
     """
-    # For very short answers, keyword matching may be sufficient
-    keyword_result = keyword_matching(student_answer, answer_key, keywords)
-    matching_keywords, missing_keywords, keyword_score = keyword_result
-    
-    # Calculate similarity for text answers
-    if question_type == 'text':
-        similarity_score = calculate_cosine_similarity(student_answer, answer_key)
-    else:
-        similarity_score = keyword_score  # For non-text questions, use keyword score
-    
-    # Generate feedback
-    feedback = ""
-    if matching_keywords:
-        feedback += f"Your answer includes key concepts: {', '.join(matching_keywords)}. "
-    
-    if missing_keywords:
-        feedback += f"Consider including: {', '.join(missing_keywords)}."
-    
-    return (similarity_score, keyword_score, feedback.strip())
+    try:
+        # For very short answers, keyword matching may be sufficient
+        keyword_result = keyword_matching(student_answer, answer_key, keywords)
+        matching_keywords, missing_keywords, keyword_score = keyword_result
+        
+        # Calculate similarity for text answers
+        if question_type == 'text':
+            similarity_score = calculate_cosine_similarity(student_answer, answer_key)
+        else:
+            similarity_score = keyword_score  # For non-text questions, use keyword score
+        
+        # Generate feedback
+        feedback = ""
+        if matching_keywords:
+            feedback += f"Your answer includes key concepts: {', '.join(matching_keywords)}. "
+        
+        if missing_keywords:
+            feedback += f"Consider including: {', '.join(missing_keywords)}."
+        
+        return (similarity_score, keyword_score, feedback.strip())
+    except Exception as e:
+        # Log error and use fallback method
+        logger.error(f"Error in NLP evaluation: {e}. Using fallback method.")
+        return simple_evaluate_answer(student_answer, answer_key, keywords)
+
+def simple_evaluate_answer(student_answer, answer_key, keywords=None):
+    """
+    A simple fallback method for answer evaluation when NLP processing fails
+    Uses basic string matching and word overlap
+    """
+    try:
+        # Simple word overlap score
+        student_words = set(student_answer.lower().split())
+        answer_words = set(answer_key.lower().split())
+        
+        # Remove very common words
+        common_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'of', 'for', 'with', 'is', 'are'}
+        student_words = student_words - common_words
+        answer_words = answer_words - common_words
+        
+        # Calculate simple overlap
+        if not student_words or not answer_words:
+            overlap_score = 0
+        else:
+            overlap = student_words.intersection(answer_words)
+            overlap_score = len(overlap) / max(len(answer_words), 1)
+        
+        # Simple keyword check
+        keyword_matched = []
+        keyword_missing = []
+        
+        if keywords:
+            keyword_list = [k.strip().lower() for k in keywords.split(',')]
+            for kw in keyword_list:
+                if kw in student_answer.lower():
+                    keyword_matched.append(kw)
+                else:
+                    keyword_missing.append(kw)
+        else:
+            # Use important words from answer key as keywords
+            keyword_list = [word for word in answer_words if len(word) > 4][:5]  # Use 5 longest words
+            for kw in keyword_list:
+                if kw in student_words:
+                    keyword_matched.append(kw)
+                else:
+                    keyword_missing.append(kw)
+        
+        # Calculate keyword score
+        if not keyword_list:
+            keyword_score = overlap_score  # Fall back to overlap score
+        else:
+            keyword_score = len(keyword_matched) / len(keyword_list)
+        
+        # Generate simple feedback
+        feedback = ""
+        if keyword_matched:
+            feedback += f"Key concepts found: {', '.join(keyword_matched)}. "
+        
+        if keyword_missing:
+            feedback += f"Consider including: {', '.join(keyword_missing)}."
+        
+        return overlap_score, keyword_score, feedback.strip()
+    except Exception as e:
+        # Ultimate fallback - if all else fails, return minimal scores
+        logger.error(f"Fatal error in simple evaluation: {e}")
+        return 0.1, 0.1, "Error evaluating answer. Please review manually."
 
 def extract_student_info(text):
     """
     Attempt to extract student name and ID from the answer paper
     This is a simple implementation and may need customization for different formats
     """
-    # Look for common patterns
-    name_pattern = re.compile(r'name[:\s]+([A-Za-z\s]+)', re.IGNORECASE)
-    id_pattern = re.compile(r'(id|roll|number)[:\s]+([A-Za-z0-9\-]+)', re.IGNORECASE)
-    
-    # Search for matches
-    name_match = name_pattern.search(text)
-    id_match = id_pattern.search(text)
-    
-    # Extract matches if found
-    student_name = name_match.group(1).strip() if name_match else ""
-    student_id = id_match.group(2).strip() if id_match else ""
-    
-    return (student_name, student_id)
+    try:
+        # Look for common patterns
+        name_pattern = re.compile(r'name[:\s]+([A-Za-z\s]+)', re.IGNORECASE)
+        id_pattern = re.compile(r'(id|roll|number)[:\s]+([A-Za-z0-9\-]+)', re.IGNORECASE)
+        
+        # Search for matches
+        name_match = name_pattern.search(text)
+        id_match = id_pattern.search(text)
+        
+        # Extract matches if found
+        student_name = name_match.group(1).strip() if name_match else ""
+        student_id = id_match.group(2).strip() if id_match else ""
+        
+        # Validate extracted info
+        if student_name and len(student_name) > 50:  # Probably extracted too much text
+            student_name = student_name[:50]
+            
+        if student_id and len(student_id) > 20:  # ID is usually shorter
+            student_id = student_id[:20]
+            
+        return (student_name, student_id)
+    except Exception as e:
+        logger.error(f"Error extracting student info: {e}")
+        return ("", "")

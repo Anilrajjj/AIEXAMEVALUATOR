@@ -166,17 +166,46 @@ def upload_answers(exam_id):
             upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], f'exam_{exam_id}')
             os.makedirs(upload_folder, exist_ok=True)
             
-            file_path = save_uploaded_file(form.answer_file.data, upload_folder)
+            # Get the file and validate its type
+            upload_file = form.answer_file.data
+            filename = upload_file.filename.lower()
+            if not (filename.endswith('.pdf') or 
+                    filename.endswith('.jpg') or 
+                    filename.endswith('.jpeg') or 
+                    filename.endswith('.png')):
+                flash('Please upload a PDF or image file (jpg, jpeg, png).', 'danger')
+                return render_template('upload_answers.html', form=form, exam=exam)
             
-            # Process the file (OCR)
-            extracted_text = process_file(file_path)
+            # Log the upload
+            current_app.logger.info(f"Processing upload: {filename} for exam {exam_id}")
             
-            if not extracted_text:
-                flash('Could not extract text from the uploaded file.', 'danger')
+            # Save the file
+            file_path = save_uploaded_file(upload_file, upload_folder)
+            current_app.logger.debug(f"File saved at: {file_path}")
+            
+            # Process the file (OCR) with proper error handling
+            try:
+                extracted_text = process_file(file_path)
+                current_app.logger.debug(f"Text extraction complete. Text length: {len(extracted_text)}")
+                
+                if not extracted_text or extracted_text.startswith('[Error'):
+                    error_msg = "Could not extract text from the uploaded file."
+                    if extracted_text.startswith('[Error'):
+                        error_msg += f" Details: {extracted_text}"
+                    flash(error_msg, 'danger')
+                    return render_template('upload_answers.html', form=form, exam=exam)
+            except Exception as e:
+                current_app.logger.error(f"Exception in text extraction: {str(e)}")
+                flash(f'Error processing file: {str(e)}', 'danger')
                 return render_template('upload_answers.html', form=form, exam=exam)
             
             # Try to extract student info from the text
-            auto_student_name, auto_student_id = extract_student_info(extracted_text)
+            try:
+                auto_student_name, auto_student_id = extract_student_info(extracted_text)
+                current_app.logger.debug(f"Extracted student info: {auto_student_name}, {auto_student_id}")
+            except Exception as e:
+                current_app.logger.error(f"Error extracting student info: {str(e)}")
+                auto_student_name, auto_student_id = "", ""
             
             # Use form data but fall back to extracted info if not provided
             student_name = form.student_name.data or auto_student_name
