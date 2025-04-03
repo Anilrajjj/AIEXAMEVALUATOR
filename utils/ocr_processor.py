@@ -14,17 +14,31 @@ logger = logging.getLogger(__name__)
 
 def preprocess_image(image):
     """Preprocess image for better OCR results"""
-    # Convert the image to grayscale
-    gray = cv2.cvtColor(np.array(image), cv2.COLOR_BGR2GRAY)
-    
-    # Apply thresholding to get rid of background noise
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    
-    # Apply dilation to make text more solid
-    kernel = np.ones((1, 1), np.uint8)
-    dilated = cv2.dilate(thresh, kernel, iterations=1)
-    
-    return Image.fromarray(dilated)
+    try:
+        # Convert PIL Image to numpy array
+        img_array = np.array(image)
+        
+        # Check if the image is already grayscale
+        if len(img_array.shape) == 2:
+            gray = img_array  # Already grayscale
+        elif len(img_array.shape) == 3 and img_array.shape[2] == 1:
+            gray = img_array[:, :, 0]  # Single channel
+        else:
+            # Convert to grayscale
+            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        
+        # Apply thresholding to get rid of background noise
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # Apply dilation to make text more solid
+        kernel = np.ones((1, 1), np.uint8)
+        dilated = cv2.dilate(thresh, kernel, iterations=1)
+        
+        return Image.fromarray(dilated)
+    except Exception as e:
+        logger.error(f"Error preprocessing image: {e}")
+        # Return the original image if preprocessing fails
+        return image
 
 def extract_text_from_image(image_path):
     """Extract text from an image file using PyTesseract OCR"""
