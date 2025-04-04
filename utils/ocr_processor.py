@@ -324,8 +324,17 @@ def process_file(file_path, is_handwritten=True):
             
             # If pdfminer failed to extract meaningful text, try a very simple extraction
             with open(file_path, 'rb') as pdf_file:
-                raw_content = pdf_file.read().decode('utf-8', errors='ignore')
-                simple_text = ' '.join(raw_content.split())
+                # Read content and filter out NULL bytes and other problematic characters
+                raw_content = pdf_file.read()
+                # Filter out NULL bytes before decoding
+                filtered_content = bytearray([b for b in raw_content if b != 0])
+                text_content = filtered_content.decode('utf-8', errors='ignore')
+                
+                # Clean the text further
+                import re
+                # Remove control characters except newlines and tabs
+                text_content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text_content)
+                simple_text = ' '.join(text_content.split())
                 
                 if len(simple_text) > 100:
                     logger.info("Used simple text extraction as fallback")

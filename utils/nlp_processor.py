@@ -34,11 +34,15 @@ stop_words = set(stopwords.words('english'))
 def preprocess_text(text):
     """
     Preprocess text for NLP analysis:
+    - Remove NUL bytes and control characters
     - Convert to lowercase
     - Remove punctuation
     - Remove stopwords
     - Lemmatize words
     """
+    # First, clean any NULL bytes and control characters
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+    
     # Convert to lowercase
     text = text.lower()
     
@@ -110,6 +114,13 @@ def evaluate_answer(student_answer, answer_key, keywords=None, question_type='te
     Returns a tuple of (similarity_score, keyword_score, feedback)
     """
     try:
+        # First, clean any NULL bytes and control characters before processing
+        student_answer = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', student_answer)
+        answer_key = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', answer_key)
+        
+        if keywords:
+            keywords = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', keywords)
+        
         # For very short answers, keyword matching may be sufficient
         keyword_result = keyword_matching(student_answer, answer_key, keywords)
         matching_keywords, missing_keywords, keyword_score = keyword_result
@@ -140,6 +151,13 @@ def simple_evaluate_answer(student_answer, answer_key, keywords=None):
     Uses basic string matching and word overlap
     """
     try:
+        # First, clean any NULL bytes and control characters
+        student_answer = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', student_answer)
+        answer_key = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', answer_key)
+        
+        if keywords:
+            keywords = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', keywords)
+        
         # Simple word overlap score
         student_words = set(student_answer.lower().split())
         answer_words = set(answer_key.lower().split())
