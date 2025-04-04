@@ -1,402 +1,212 @@
 {% extends "layout.html" %}
 
+{% block title %}Exam Report - {{ exam.title }}{% endblock %}
+
 {% block content %}
-<div class="container">
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1 class="h2">
-      <i class="fas fa-chart-bar me-2"></i>Exam Reports & Analytics
-    </h1>
-    <div>
-      <a href="{{ url_for('exam.view_submissions', exam_id=exam.id) }}" class="btn btn-outline-secondary me-2">
-        <i class="fas fa-list me-1"></i>View Results
-      </a>
-      <a href="{{ url_for('exam.upload_answers', exam_id=exam.id) }}" class="btn btn-primary">
-        <i class="fas fa-upload me-1"></i>Upload More
-      </a>
+<div class="container mt-4">
+  <h1>Exam Report: {{ exam.title }}</h1>
+  <p class="text-muted">{{ exam.description }}</p>
+  
+  <div class="row mt-4">
+    <div class="col-md-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title mb-0">Exam Overview</h5>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <tbody>
+                <tr>
+                  <th>Total Submissions</th>
+                  <td>{{ submissions|length }}</td>
+                </tr>
+                <tr>
+                  <th>Average Score</th>
+                  <td>{{ stats.average|round(2) }} / {{ stats.max_possible }}</td>
+                </tr>
+                <tr>
+                  <th>Highest Score</th>
+                  <td>{{ stats.highest|round(2) }}</td>
+                </tr>
+                <tr>
+                  <th>Lowest Score</th>
+                  <td>{{ stats.lowest|round(2) }}</td>
+                </tr>
+                <tr>
+                  <th>Standard Deviation</th>
+                  <td>{{ stats.std_dev|round(2) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-md-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title mb-0">Score Distribution</h5>
+        </div>
+        <div class="card-body">
+          <canvas id="scoreDistributionChart" width="100%" height="250"></canvas>
+        </div>
+        <div class="card-footer">
+          <small class="text-muted">Distribution of student scores across different ranges</small>
+        </div>
+      </div>
     </div>
   </div>
   
-  <!-- Exam information -->
-  <div class="card shadow-sm mb-4">
-    <div class="card-header bg-dark">
-      <h5 class="card-title mb-0">{{ exam.title }}</h5>
-    </div>
-    <div class="card-body">
-      <div class="row">
-        <div class="col-md-8">
-          {% if exam.description %}
-            <p>{{ exam.description }}</p>
-          {% else %}
-            <p class="text-muted">No description provided.</p>
-          {% endif %}
+  <div class="row">
+    <div class="col-md-12">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title mb-0">Question Performance</h5>
         </div>
-        <div class="col-md-4">
-          <div class="d-flex justify-content-end">
-            <div class="text-end">
-              <p class="mb-1"><strong>Questions:</strong> {{ exam.questions|length }}</p>
-              <p class="mb-1"><strong>Submissions:</strong> {{ submissions_count }}</p>
-              <p class="mb-0"><strong>Maximum Score:</strong> {{ max_score }}</p>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-8">
+              <canvas id="questionPerformanceChart" width="100%" height="300"></canvas>
+            </div>
+            <div class="col-md-4">
+              <canvas id="questionRadarChart" width="100%" height="300"></canvas>
             </div>
           </div>
+        </div>
+        <div class="card-footer">
+          <small class="text-muted">Average performance per question across all submissions</small>
         </div>
       </div>
     </div>
   </div>
   
-  {% if has_data %}
-    <!-- Summary statistics -->
-    <div class="row mb-4">
-      <div class="col-md-3">
-        <div class="card stat-card bg-primary bg-opacity-25">
-          <div class="card-body">
-            <div class="stat-value">{{ stats.mean|round(2) }}</div>
-            <div class="stat-label">Mean Score</div>
-          </div>
+  <div class="row">
+    <div class="col-md-12">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="card-title mb-0">Common Errors Analysis</h5>
         </div>
-      </div>
-      
-      <div class="col-md-3">
-        <div class="card stat-card bg-success bg-opacity-25">
-          <div class="card-body">
-            <div class="stat-value">{{ stats.max|round(2) }}</div>
-            <div class="stat-label">Highest Score</div>
-          </div>
-        </div>
-      </div>
-      
-      <div class="col-md-3">
-        <div class="card stat-card bg-warning bg-opacity-25">
-          <div class="card-body">
-            <div class="stat-value">{{ stats.min|round(2) }}</div>
-            <div class="stat-label">Lowest Score</div>
-          </div>
-        </div>
-      </div>
-      
-      <div class="col-md-3">
-        <div class="card stat-card bg-info bg-opacity-25">
-          <div class="card-body">
-            <div class="stat-value">{{ stats.std_dev|round(2) }}</div>
-            <div class="stat-label">Standard Deviation</div>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Charts section -->
-    <div class="row mb-4">
-      <!-- Score distribution chart -->
-      <div class="col-lg-6">
-        <div class="card shadow-sm mb-4">
-          <div class="card-header">
-            <h5 class="card-title mb-0">Score Distribution</h5>
-          </div>
-          <div class="card-body">
-            <div class="chart-container">
-              <canvas id="scoreDistributionChart"></canvas>
-            </div>
-            <div class="mt-3">
-              <p class="text-center">
-                <small class="text-muted">Distribution of scores across all student submissions</small>
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Question performance chart -->
-      <div class="col-lg-6">
-        <div class="card shadow-sm mb-4">
-          <div class="card-header">
-            <h5 class="card-title mb-0">Question Performance</h5>
-          </div>
-          <div class="card-body">
-            <div class="chart-container">
-              <canvas id="questionPerformanceChart"></canvas>
-            </div>
-            <div class="mt-3">
-              <p class="text-center">
-                <small class="text-muted">Average scores by question (percentage of maximum score)</small>
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Second row of charts -->
-    <div class="row mb-4">
-      <!-- Radar chart for question analysis -->
-      <div class="col-lg-6">
-        <div class="card shadow-sm mb-4">
-          <div class="card-header">
-            <h5 class="card-title mb-0">Comparative Question Analysis</h5>
-          </div>
-          <div class="card-body">
-            <div class="chart-container">
-              <canvas id="questionRadarChart"></canvas>
-            </div>
-            <div class="mt-3">
-              <p class="text-center">
-                <small class="text-muted">Performance across all questions (normalized)</small>
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Question-specific stats -->
-      <div class="col-lg-6">
-        <div class="card shadow-sm mb-4">
-          <div class="card-header">
-            <h5 class="card-title mb-0">Question-Specific Statistics</h5>
-          </div>
-          <div class="card-body">
-            <div class="table-responsive">
-              <table class="table table-hover">
-                <thead>
-                  <tr>
-                    <th>Question</th>
-                    <th>Avg. Score</th>
-                    <th>% of Max</th>
-                    <th>Performance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for q_stat in question_avgs %}
-                    <tr>
-                      <td>Q{{ q_stat.question.order + 1 }}</td>
-                      <td>{{ q_stat.avg_score }}</td>
-                      <td>{{ q_stat.percentage }}%</td>
-                      <td>
-                        <div class="progress" style="height: 20px;">
-                          <div class="progress-bar 
-                            {% if q_stat.percentage >= 70 %}bg-success
-                            {% elif q_stat.percentage >= 40 %}bg-warning
-                            {% else %}bg-danger{% endif %}" 
-                            role="progressbar" 
-                            style="width: {{ q_stat.percentage }}%"
-                            aria-valuenow="{{ q_stat.percentage }}" 
-                            aria-valuemin="0" 
-                            aria-valuemax="100">
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Common error analysis -->
-    <div class="card shadow-sm mb-4">
-      <div class="card-header">
-        <h5 class="card-title mb-0">Common Error Analysis</h5>
-      </div>
-      <div class="card-body">
-        <p class="text-muted mb-4">This analysis identifies common missing keywords and concepts across student answers.</p>
-        
-        <div class="accordion" id="errorAnalysisAccordion">
-          {% for question_id, data in error_analysis.items() %}
-            <div class="accordion-item">
-              <h2 class="accordion-header" id="heading{{ question_id }}">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ question_id }}" aria-expanded="false" aria-controls="collapse{{ question_id }}">
-                  Question {{ loop.index }}: {{ data.question|truncate(60) }}
-                </button>
-              </h2>
-              <div id="collapse{{ question_id }}" class="accordion-collapse collapse" aria-labelledby="heading{{ question_id }}" data-bs-parent="#errorAnalysisAccordion">
-                <div class="accordion-body">
-                  <h6 class="mb-3">Common Missing Concepts:</h6>
-                  
-                  {% if data.missing_keywords %}
-                    <div class="row">
-                      <div class="col-md-8">
-                        <div class="table-responsive">
-                          <table class="table table-sm">
-                            <thead>
-                              <tr>
-                                <th>Keyword</th>
-                                <th>Frequency</th>
-                                <th>Percentage</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {% for keyword, count in data.missing_keywords.items() %}
-                                <tr>
-                                  <td>{{ keyword }}</td>
-                                  <td>{{ count }}</td>
-                                  <td>
-                                    {% set percentage = (count / submissions_count) * 100 %}
-                                    {{ percentage|round(1) }}%
-                                  </td>
-                                </tr>
-                              {% endfor %}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                      <div class="col-md-4">
-                        <div class="chart-container" style="height: 200px;">
-                          <canvas id="keywordChart{{ question_id }}"></canvas>
-                        </div>
-                      </div>
-                    </div>
+        <div class="card-body">
+          <div class="accordion" id="errorAnalysisAccordion">
+            {% for question_id, data in error_analysis.items() %}
+              {% set question = question_data[question_id|int] %}
+              <div class="accordion-item">
+                <h2 class="accordion-header" id="heading{{ loop.index }}">
+                  <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
+                    Question {{ loop.index }}: {{ question.text|truncate(50) }}
+                  </button>
+                </h2>
+                <div id="collapse{{ loop.index }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#errorAnalysisAccordion">
+                  <div class="accordion-body">
+                    <p><strong>Answer Key:</strong> {{ question.answer_key }}</p>
+                    {% if question.keywords %}
+                      <p><strong>Key Concepts:</strong> {{ question.keywords }}</p>
+                    {% endif %}
                     
-                    <div class="alert alert-info mt-3">
-                      <h6 class="alert-heading">Teaching Insight:</h6>
-                      <p class="mb-0">
-                        Based on this analysis, students most frequently omitted the concept of 
-                        "<strong>{{ data.missing_keywords.keys()|list|first }}</strong>" in their answers. 
-                        Consider reinforcing this concept in future lessons.
-                      </p>
+                    <h6 class="mt-3">Commonly Missing Keywords</h6>
+                    <div class="table-responsive">
+                      <table class="table table-sm">
+                        <thead>
+                          <tr>
+                            <th>Keyword</th>
+                            <th>Missing Count</th>
+                            <th>Percentage</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for keyword, count in data.missing_keywords.items() %}
+                            <tr>
+                              <td>{{ keyword }}</td>
+                              <td>{{ count }} / {{ submissions|length }}</td>
+                              <td>{{ (count / submissions|length * 100)|round(1) }}%</td>
+                            </tr>
+                          {% else %}
+                            <tr>
+                              <td colspan="3">No keyword analysis available</td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
                     </div>
-                  {% else %}
-                    <p class="text-muted">No common errors identified for this question.</p>
-                  {% endif %}
+                  </div>
                 </div>
               </div>
-            </div>
-          {% endfor %}
+            {% endfor %}
+          </div>
+        </div>
+        <div class="card-footer text-end">
+          <button id="downloadReportBtn" class="btn btn-primary">
+            <i class="bi bi-download"></i> Download Report
+          </button>
         </div>
       </div>
     </div>
-    
-    <!-- Export options -->
-    <div class="card shadow-sm mb-4">
-      <div class="card-header">
-        <h5 class="card-title mb-0">Export Reports</h5>
-      </div>
-      <div class="card-body">
-        <div class="row">
-          <div class="col-md-4">
-            <div class="d-grid">
-              <button class="btn btn-outline-primary" id="exportScoresCsv">
-                <i class="fas fa-file-csv me-2"></i>Export Scores (CSV)
-              </button>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="d-grid">
-              <button class="btn btn-outline-primary" id="exportQuestionAnalysisCsv">
-                <i class="fas fa-file-csv me-2"></i>Export Question Analysis (CSV)
-              </button>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="d-grid">
-              <button class="btn btn-outline-primary" id="exportErrorAnalysisCsv">
-                <i class="fas fa-file-csv me-2"></i>Export Error Analysis (CSV)
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+  </div>
   
-  {% else %}
-    <!-- No data state -->
-    <div class="card shadow-sm">
-      <div class="card-body text-center py-5">
-        <i class="fas fa-chart-line fa-4x mb-3 text-muted"></i>
-        <h3>No Data Available</h3>
-        <p class="text-muted">Upload student answer papers to generate reports and analytics.</p>
-        <a href="{{ url_for('exam.upload_answers', exam_id=exam.id) }}" class="btn btn-primary mt-3">
-          <i class="fas fa-upload me-2"></i>Upload Answer Papers
-        </a>
-      </div>
+  <div class="row mt-4 mb-4">
+    <div class="col-12">
+      <a href="{{ url_for('view_submissions', exam_id=exam.id) }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Submissions
+      </a>
     </div>
-  {% endif %}
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-{% if has_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="{{ url_for('static', filename='js/chart_utils.js') }}"></script>
 <script>
   document.addEventListener('DOMContentLoaded', function() {
-    // Score distribution chart
-    createScoreDistributionChart('scoreDistributionChart', {{ chart_labels|tojson }}, {{ chart_data|tojson }});
+    // Load score distribution data
+    loadScoreDistributionData({{ exam.id }}, 'scoreDistributionChart');
     
-    // Load question performance data for charts
+    // Load question performance data (for both bar chart and radar chart)
     loadQuestionPerformanceData({{ exam.id }}, 'questionPerformanceChart', 'questionRadarChart');
     
-    // Create keyword charts for each question in error analysis
-    {% for question_id, data in error_analysis.items() %}
-      {% if data.missing_keywords %}
-        new Chart(document.getElementById('keywordChart{{ question_id }}').getContext('2d'), {
-          type: 'pie',
-          data: {
-            labels: {{ data.missing_keywords.keys()|list|tojson }},
-            datasets: [{
-              data: {{ data.missing_keywords.values()|list|tojson }},
-              backgroundColor: [
-                'rgba(255, 99, 132, 0.7)',
-                'rgba(54, 162, 235, 0.7)',
-                'rgba(255, 206, 86, 0.7)',
-                'rgba(75, 192, 192, 0.7)',
-                'rgba(153, 102, 255, 0.7)',
-                'rgba(255, 159, 64, 0.7)'
-              ]
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                position: 'right',
-                labels: {
-                  boxWidth: 10,
-                  font: {
-                    size: 10
-                  }
-                }
-              }
-            }
-          }
-        });
-      {% endif %}
-    {% endfor %}
-    
-    // Export buttons functionality
-    document.getElementById('exportScoresCsv').addEventListener('click', function() {
-      const csvContent = 'data:text/csv;charset=utf-8,Question,Average Score,Percentage\n' + 
-        {% for q_stat in question_avgs %}
-          'Q{{ q_stat.question.order + 1 }},{{ q_stat.avg_score }},{{ q_stat.percentage }}%\n' + 
-        {% endfor %}
-        'Overall,{{ stats.mean }},{{ (stats.mean / max_score * 100)|round(1) }}%';
+    // Generate and download report
+    document.getElementById('downloadReportBtn').addEventListener('click', function() {
+      // Prepare CSV content
+      let csvContent = 'Exam Report: {{ exam.title }}\n\n';
       
-      generateReportDownload(csvContent, 'score_analysis_{{ exam.title }}.csv');
-    });
-    
-    document.getElementById('exportQuestionAnalysisCsv').addEventListener('click', function() {
-      const csvContent = 'data:text/csv;charset=utf-8,Statistic,Value\n' + 
-        'Mean,{{ stats.mean }}\n' + 
-        'Median,{{ stats.median }}\n' + 
-        'Maximum,{{ stats.max }}\n' + 
-        'Minimum,{{ stats.min }}\n' + 
-        'Standard Deviation,{{ stats.std_dev }}\n' + 
-        'Number of Submissions,{{ stats.count }}';
+      // Exam overview
+      csvContent += 'EXAM OVERVIEW\n';
+      csvContent += 'Total Submissions,{{ submissions|length }}\n';
+      csvContent += 'Average Score,{{ stats.average|round(2) }}\n';
+      csvContent += 'Highest Score,{{ stats.highest|round(2) }}\n';
+      csvContent += 'Lowest Score,{{ stats.lowest|round(2) }}\n';
+      csvContent += 'Standard Deviation,{{ stats.std_dev|round(2) }}\n\n';
       
-      generateReportDownload(csvContent, 'statistics_{{ exam.title }}.csv');
-    });
-    
-    document.getElementById('exportErrorAnalysisCsv').addEventListener('click', function() {
-      let csvContent = 'data:text/csv;charset=utf-8,Question,Missing Keyword,Frequency,Percentage\n';
+      // Question performance
+      csvContent += 'QUESTION PERFORMANCE\n';
+      csvContent += 'Question,Average Score,Max Score,Performance (%)\n';
+      {% for question in exam.questions %}
+        {% if question_performance[question.id] is defined %}
+          csvContent += '{{ loop.index }},{{ question_performance[question.id].avg_score|round(2) }},{{ question.max_score }},{{ (question_performance[question.id].avg_score / question.max_score * 100)|round(1) }}%\n';
+        {% endif %}
+      {% endfor %}
+      
+      // Common errors
+      csvContent += '\nCOMMON ERRORS ANALYSIS\n';
+      csvContent += 'Question,Keyword,Missing Count,Percentage\n';
       
       {% for question_id, data in error_analysis.items() %}
+        {% set q_index = loop.index %}
         {% for keyword, count in data.missing_keywords.items() %}
-          {% set percentage = (count / submissions_count * 100)|round(1) %}
-          csvContent += 'Q{{ loop.parent.loop.index }},"{{ keyword }}",{{ count }},{{ percentage }}%\n';
+          {% set percentage = (count / submissions|length * 100)|round(1) %}
+          try {
+            csvContent += 'Q{{ q_index }},"{{ keyword }}",{{ count }},{{ percentage }}%\n';
+          } catch(e) {
+            console.error("Error in CSV generation:", e);
+          }
         {% endfor %}
       {% endfor %}
       
-      generateReportDownload(csvContent, 'error_analysis_{{ exam.title }}.csv');
+      // Generate download
+      generateReportDownload(csvContent, 'exam_report_{{ exam.id }}.csv');
     });
   });
 </script>
-{% endif %}
 {% endblock %}
