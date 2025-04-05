@@ -102,8 +102,12 @@
               </div>
             </div>
             
-            <div class="preview-container">
-              <canvas id="preview-canvas" class="preview-canvas"></canvas>
+            <div class="preview-container mt-3 border rounded p-2" id="pdf-preview-container">
+              <!-- PDF will be rendered here with navigation controls -->
+              <div class="text-center text-muted p-4">
+                <i class="fas fa-file-pdf fa-3x mb-2"></i>
+                <p>PDF preview will appear here</p>
+              </div>
             </div>
             
             <div class="d-grid mt-3">
@@ -122,7 +126,7 @@
             </p>
             <p class="mb-0 small">
               <i class="fas fa-lightbulb me-1"></i><strong>New Feature:</strong> 
-              Enhanced handwritten text recognition is now available! Check the "handwritten" option for improved accuracy on handwritten papers.
+              Enhanced multi-page PDF support is now available! You can view all pages of a PDF before uploading.
             </p>
           </div>
         </div>
@@ -173,7 +177,7 @@
 <script>
   // Setup the PDF file input preview
   document.addEventListener('DOMContentLoaded', function() {
-    setupPdfFileInput('answer_file', 'preview-canvas');
+    setupPdfFileInput('answer_file', 'pdf-preview-container');
   });
 </script>
 {% endblock %}
