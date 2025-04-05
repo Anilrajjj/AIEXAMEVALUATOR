@@ -35,7 +35,7 @@
             <div class="text-end">
               <p class="mb-1"><strong>Questions:</strong> {{ exam.questions|length }}</p>
               <p class="mb-1"><strong>Submissions:</strong> {{ exam.submissions|length }}</p>
-              <p class="mb-0"><strong>Maximum Score:</strong> {{ max_score }}</p>
+              <p class="mb-0"><strong>Maximum Score:</strong> {{ max_score|int }}</p>
             </div>
           </div>
         </div>
@@ -49,44 +49,60 @@
       <div class="col-md-3">
         <div class="card stat-card bg-primary bg-opacity-25">
           <div class="card-body">
-            <div class="stat-value">{{ submissions|length }}</div>
-            <div class="stat-label">Total Submissions</div>
+            <div class="d-flex align-items-center">
+              <div class="stat-icon bg-primary">
+                <i class="fas fa-users"></i>
+              </div>
+              <div class="ms-3">
+                <h6 class="card-subtitle text-muted">Total Submissions</h6>
+                <h3 class="card-title mb-0">{{ submissions|length }}</h3>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      
       <div class="col-md-3">
         <div class="card stat-card bg-success bg-opacity-25">
           <div class="card-body">
-            <div class="stat-value">
-              {% set avg_score = submissions|map(attribute='total_score')|sum / submissions|length %}
-              {{ avg_score|round(2) }}
+            <div class="d-flex align-items-center">
+              <div class="stat-icon bg-success">
+                <i class="fas fa-chart-line"></i>
+              </div>
+              <div class="ms-3">
+                <h6 class="card-subtitle text-muted">Average Score</h6>
+                <h3 class="card-title mb-0">{{ (avg_score|int if avg_score else 0) }}</h3>
+              </div>
             </div>
-            <div class="stat-label">Average Score</div>
           </div>
         </div>
       </div>
-      
       <div class="col-md-3">
         <div class="card stat-card bg-info bg-opacity-25">
           <div class="card-body">
-            <div class="stat-value">
-              {% set high_scores = submissions|selectattr('total_score', '>=', max_score * 0.7)|list|length %}
-              {{ ((high_scores / submissions|length) * 100)|int }}%
+            <div class="d-flex align-items-center">
+              <div class="stat-icon bg-info">
+                <i class="fas fa-trophy"></i>
+              </div>
+              <div class="ms-3">
+                <h6 class="card-subtitle text-muted">Highest Score</h6>
+                <h3 class="card-title mb-0">{{ (max_student_score|int if max_student_score else 0) }}</h3>
+              </div>
             </div>
-            <div class="stat-label">High Performers</div>
           </div>
         </div>
       </div>
-      
       <div class="col-md-3">
         <div class="card stat-card bg-warning bg-opacity-25">
           <div class="card-body">
-            <div class="stat-value">
-              {% set low_scores = submissions|selectattr('total_score', '<', max_score * 0.4)|list|length %}
-              {{ ((low_scores / submissions|length) * 100)|int }}%
+            <div class="d-flex align-items-center">
+              <div class="stat-icon bg-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+              </div>
+              <div class="ms-3">
+                <h6 class="card-subtitle text-muted">Lowest Score</h6>
+                <h3 class="card-title mb-0">{{ (min_student_score|int if min_student_score else 0) }}</h3>
+              </div>
             </div>
-            <div class="stat-label">Low Performers</div>
           </div>
         </div>
       </div>
@@ -126,7 +142,7 @@
                   <td>{{ submission.student_name }}</td>
                   <td>{{ submission.student_id }}</td>
                   <td>{{ submission.submitted_at.strftime('%b %d, %Y %H:%M') }}</td>
-                  <td class="text-center">{{ submission.total_score }}/{{ max_score }}</td>
+                  <td class="text-center">{{ submission.total_score|int }}/{{ max_score|int }}</td>
                   <td class="text-center">
                     <div class="progress" style="height: 20px;">
                       <div class="progress-bar 
@@ -169,15 +185,34 @@
         </div>
       {% else %}
         <div class="text-center py-5">
-          <i class="fas fa-file-alt fa-3x mb-3 text-muted"></i>
-          <h5>No Submissions Yet</h5>
+          <i class="fas fa-clipboard-list fa-4x mb-3 text-muted"></i>
+          <h5>No submissions yet</h5>
           <p class="text-muted">Upload student answer papers to see results here.</p>
-          <a href="{{ url_for('exam.upload_answers', exam_id=exam.id) }}" class="btn btn-primary">
-            <i class="fas fa-upload me-2"></i>Upload Answer Papers
+          <a href="{{ url_for('exam.upload_answers', exam_id=exam.id) }}" class="btn btn-primary mt-2">
+            <i class="fas fa-upload me-1"></i>Upload Answers
           </a>
         </div>
       {% endif %}
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if submissions %}
+<script>
+  // Add animation to progress bars
+  document.addEventListener('DOMContentLoaded', function() {
+    const progressBars = document.querySelectorAll('.progress-bar');
+    progressBars.forEach(bar => {
+      const width = bar.style.width;
+      bar.style.width = '0%';
+      setTimeout(() => {
+        bar.style.transition = 'width 1s ease-in-out';
+        bar.style.width = width;
+      }, 200);
+    });
+  });
+</script>
+{% endif %}
 {% endblock %}

@@ -23,10 +23,11 @@ def calculate_score(similarity_score, keyword_score, max_score=1.0, weight_simil
     # Calculate weighted combined score
     combined_score = (similarity_score * weight_similarity) + (keyword_score * weight_keyword)
     
-    # Scale to max_score
+    # Scale to max_score and convert to integer
     final_score = combined_score * max_score
     
-    return round(final_score, 2)
+    # Round to the nearest integer
+    return int(round(final_score))
 
 def get_score_statistics(scores):
     """

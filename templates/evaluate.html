@@ -32,7 +32,7 @@
             {% if submission.total_score / max_score >= 0.7 %}text-success
             {% elif submission.total_score / max_score >= 0.4 %}text-warning
             {% else %}text-danger{% endif %}">
-            {{ submission.total_score }} / {{ max_score }}
+            {{ submission.total_score|int }} / {{ max_score|int }}
           </h2>
           <p class="text-muted small">Total Score</p>
         </div>
@@ -46,7 +46,7 @@
       <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="card-title mb-0">Question {{ answer.question.order + 1 }}</h5>
         <span class="badge {% if answer.score / answer.question.max_score >= 0.7 %}bg-success{% elif answer.score / answer.question.max_score >= 0.4 %}bg-warning{% else %}bg-danger{% endif %}">
-          {{ answer.score }} / {{ answer.question.max_score }}
+          {{ answer.score|int }} / {{ answer.question.max_score|int }}
         </span>
       </div>
       <div class="card-body">
@@ -71,23 +71,21 @@
             <h6>Student's Answer:</h6>
             <div class="p-3 bg-dark bg-opacity-10 rounded student-answer">
               {% if answer.extracted_text %}
-                <!-- Process the extracted text to display properly -->
-                {% set lines = answer.extracted_text.split('\n') %}
-                {% for line in lines %}
-                  <!-- Handle page markers differently -->
-                  {% if line.strip().startswith('---') and 'Page' in line %}
-                    <div class="mt-2 mb-2 text-primary border-bottom border-primary small">
-                      <i class="fas fa-file-alt me-1"></i>{{ line.strip() }}
-                    </div>
-                  {% else %}
-                    <!-- Display normal text with proper formatting -->
-                    {% if line.strip() %}
-                      <p class="mb-1">{{ line }}</p>
+                <!-- Improved formatting for student answers -->
+                <div class="formatted-answer">
+                  {% set lines = answer.extracted_text.split('\n') %}
+                  {% for line in lines %}
+                    {% if line.strip().startswith('---') and 'Page' in line %}
+                      <div class="page-marker">
+                        <i class="fas fa-file-alt me-1"></i>{{ line.strip() }}
+                      </div>
+                    {% elif line.strip() %}
+                      <p class="answer-paragraph">{{ line }}</p>
                     {% else %}
                       <br>
                     {% endif %}
-                  {% endif %}
-                {% endfor %}
+                  {% endfor %}
+                </div>
               {% else %}
                 <p class="text-muted fst-italic">No text extracted</p>
               {% endif %}
@@ -146,23 +144,42 @@
 <script>
   // Highlight keywords in student answers
   document.addEventListener('DOMContentLoaded', function() {
-    // Format and style the student answers for better readability
+    // Add CSS styles for better formatting
+    const style = document.createElement('style');
+    style.textContent = `
+      .formatted-answer {
+        font-family: 'Roboto Mono', monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        line-height: 1.6;
+        font-size: 0.95rem;
+      }
+      .page-marker {
+        color: var(--bs-primary);
+        font-weight: 500;
+        border-bottom: 1px solid var(--bs-primary);
+        padding: 4px 0;
+        margin: 10px 0;
+        font-size: 0.9rem;
+      }
+      .answer-paragraph {
+        margin-bottom: 0.5rem;
+        padding-left: 0.5rem;
+        border-left: 3px solid rgba(var(--bs-secondary-rgb), 0.2);
+      }
+      mark {
+        background-color: rgba(var(--bs-warning-rgb), 0.3);
+        padding: 0 3px;
+        border-radius: 3px;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    // Format and highlight keywords in student answers
     const studentAnswers = document.querySelectorAll('.student-answer');
     
     studentAnswers.forEach(answerDiv => {
-      // Add some CSS styling for better readability
-      const paragraphs = answerDiv.querySelectorAll('p');
-      paragraphs.forEach(p => {
-        // Check if this paragraph is a page marker
-        if (p.textContent.includes('--- Page')) {
-          p.style.color = '#007bff';
-          p.style.fontWeight = 'bold';
-          p.style.borderBottom = '1px solid #007bff';
-          p.style.padding = '3px 0';
-        }
-      });
-      
-      // Add keyword highlighting if appropriate
+      // Get keywords for this question
       const questionCard = answerDiv.closest('.card');
       const keywordSpans = questionCard.querySelectorAll('.badge.bg-info');
       
@@ -170,17 +187,21 @@
         const keywords = Array.from(keywordSpans).map(span => span.textContent.trim());
         
         // Highlight keywords in the student's answer
-        const text = answerDiv.innerHTML;
-        let highlightedText = text;
+        const formattedAnswer = answerDiv.querySelector('.formatted-answer');
+        const paragraphs = formattedAnswer.querySelectorAll('p');
         
-        keywords.forEach(keyword => {
-          if (keyword.length > 2) { // Avoid highlighting very short words
-            const regex = new RegExp('\\b(' + keyword + ')\\b', 'gi');
-            highlightedText = highlightedText.replace(regex, '<mark>$1</mark>');
-          }
+        paragraphs.forEach(p => {
+          let content = p.innerHTML;
+          
+          keywords.forEach(keyword => {
+            if (keyword.length > 2) { // Avoid highlighting very short words
+              const regex = new RegExp('\\b(' + keyword + ')\\b', 'gi');
+              content = content.replace(regex, '<mark>$1</mark>');
+            }
+          });
+          
+          p.innerHTML = content;
         });
-        
-        answerDiv.innerHTML = highlightedText;
       }
     });
   });
