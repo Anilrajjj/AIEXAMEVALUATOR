@@ -391,13 +391,63 @@ def process_file(file_path, is_handwritten=True):
                     filtered_content = bytearray([b for b in raw_content if b != 0])
                     text_content = filtered_content.decode('utf-8', errors='ignore')
                     
-                    # Clean the text further
-                    # Remove control characters except newlines and tabs
+                    # Clean the text further with enhanced processing
+                    
+                    # 1. Remove control characters except newlines and tabs
                     text_content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text_content)
+                    
+                    # 2. Clean up PDF binary artifacts and formatting markers
+                    # Remove PDF binary markers
+                    text_content = re.sub(r'%PDF-\d+\.\d+', '', text_content)
+                    text_content = re.sub(r'stream[\s\S]*?endstream', '', text_content)
+                    text_content = re.sub(r'<<.*?>>', '', text_content)
+                    text_content = re.sub(r'obj.*?endobj', '', text_content)
+                    text_content = re.sub(r'xref.*?trailer', '', text_content)
+                    
+                    # 3. Remove excessive blank lines (more than 2 consecutive)
+                    text_content = re.sub(r'\n{3,}', '\n\n', text_content)
+                    
+                    # 4. Remove lines that appear to be PDF binary data or metadata
+                    clean_lines = []
+                    for line in text_content.split('\n'):
+                        # Skip lines that look like binary data or PDF internal format
+                        if re.search(r'^[0-9]+ [0-9]+ (obj|R)$', line.strip()) or \
+                           re.search(r'^/[A-Za-z]+[/<>]', line.strip()) or \
+                           line.strip() in ['stream', 'endstream', 'endobj', 'startxref', '%%EOF'] or \
+                           re.match(r'^[\x00-\xff]{1,5}$', line.strip()):
+                            continue
+                        clean_lines.append(line)
+                    
+                    # Rejoin the clean lines
+                    text_content = '\n'.join(clean_lines)
+                    
+                    # 5. Add section headers where PDF page breaks might have been
+                    # Look for patterns like "Page X" or clear content breaks
+                    if 'page' in text_content.lower() or 'answer' in text_content.lower():
+                        # Add page markers based on potential page indicators
+                        sections = re.split(r'(\bpage\s+\d+\b|\bsection\s+\d+\b|\banswer\s+\d+\b)', 
+                                           text_content, flags=re.IGNORECASE)
+                        formatted_content = ""
+                        for i in range(len(sections)):
+                            if i % 2 == 1:  # This is a page/section marker
+                                formatted_content += f"\n--- {sections[i].strip().title()} ---\n"
+                            else:
+                                formatted_content += sections[i]
+                        text_content = formatted_content
                     
                     # If we have meaningful content, return it
                     if len(text_content.strip()) > 200:
-                        logger.info("Successfully extracted text using binary filtering")
+                        logger.info("Successfully extracted text using enhanced binary filtering")
+                        
+                        # Final cleanup - ensure the text is human-readable
+                        # Remove any remaining PDF artifacts that look like binary content
+                        text_content = re.sub(r'[\x80-\xff]{4,}', '', text_content)
+                        text_content = re.sub(r'[^\w\s\n.,;:!?()[\]{}\-"\'/#$%&*+<=>@^_`|~]', '', text_content)
+                        
+                        # Ensure there's a page marker for better display
+                        if not re.search(r'---\s*Page', text_content):
+                            text_content = "--- Page 1 ---\n" + text_content
+                            
                         return f"[Extracted content from {os.path.basename(file_path)}]\n{text_content}"
             except Exception as binary_err:
                 logger.error(f"Binary filtering error: {binary_err}")
