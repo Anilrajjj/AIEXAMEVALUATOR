@@ -41,3 +41,8 @@ class SubmissionForm(FlaskForm):
         FileAllowed(['pdf', 'jpg', 'jpeg', 'png'], 'Only PDF and image files are allowed!')
     ])
     is_handwritten = BooleanField('This is a handwritten answer paper', default=True)
+    use_manual_entry = BooleanField('Use manual text entry (in case OCR fails)', default=False)
+
+class ManualAnswerForm(FlaskForm):
+    answer_text = TextAreaField('Student Answer Text', validators=[DataRequired()])
+    question_id = IntegerField('Question ID', validators=[DataRequired()])

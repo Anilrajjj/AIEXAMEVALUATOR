@@ -1,11 +1,11 @@
 import os
 import logging
-from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
+from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app, jsonify, session
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from app import db
 from models import Exam, Question, Submission, SubmissionAnswer
-from forms import ExamForm, QuestionForm, SubmissionForm
+from forms import ExamForm, QuestionForm, SubmissionForm, ManualAnswerForm
 from utils.ocr_processor import process_file, save_uploaded_file, extract_text_segments
 from utils.nlp_processor import evaluate_answer, extract_student_info
 from utils.scoring import calculate_score
@@ -183,6 +183,23 @@ def upload_answers(exam_id):
             file_path = save_uploaded_file(upload_file, upload_folder)
             current_app.logger.debug(f"File saved at: {file_path}")
             
+            # If manual entry is selected, skip OCR processing
+            if form.use_manual_entry.data:
+                # Create submission record for manual entry
+                submission = Submission(
+                    exam_id=exam_id,
+                    student_name=form.student_name.data,
+                    student_id=form.student_id.data,
+                    original_file=os.path.basename(file_path)
+                )
+                
+                db.session.add(submission)
+                db.session.commit()
+                
+                # Redirect to manual entry form
+                flash('File uploaded successfully. Please enter the answers manually.', 'success')
+                return redirect(url_for('exam.manual_entry', exam_id=exam_id, submission_id=submission.id))
+            
             # Process the file (OCR) with proper error handling and handwritten text detection
             try:
                 # Get the handwritten flag from the form (default is True if not specified)
@@ -204,11 +221,11 @@ def upload_answers(exam_id):
                     error_msg = "Could not extract text from the uploaded file."
                     if extracted_text.startswith('[Error'):
                         error_msg += f" Details: {extracted_text}"
-                    flash(error_msg, 'danger')
+                    flash(error_msg + " You may want to try manual text entry instead.", 'danger')
                     return render_template('upload_answers.html', form=form, exam=exam)
             except Exception as e:
                 current_app.logger.error(f"Exception in text extraction: {str(e)}")
-                flash(f'Error processing file: {str(e)}', 'danger')
+                flash(f'Error processing file: {str(e)}. You may want to try manual text entry instead.', 'danger')
                 return render_template('upload_answers.html', form=form, exam=exam)
             
             # Try to extract student info from the text
@@ -282,6 +299,101 @@ def upload_answers(exam_id):
     submissions = Submission.query.filter_by(exam_id=exam_id).order_by(Submission.submitted_at.desc()).all()
     
     return render_template('upload_answers.html', form=form, exam=exam, submissions=submissions)
+
+@exam_bp.route('/exam/<int:exam_id>/submission/<int:submission_id>/manual-entry', methods=['GET', 'POST'])
+@login_required
+def manual_entry(exam_id, submission_id):
+    """Manually enter student answers for a submission"""
+    exam = Exam.query.get_or_404(exam_id)
+    
+    # Ensure the current user owns this exam
+    if exam.faculty_id != current_user.id:
+        flash('You do not have permission to edit this submission.', 'danger')
+        return redirect(url_for('exam.dashboard'))
+    
+    submission = Submission.query.get_or_404(submission_id)
+    
+    # Ensure the submission belongs to the specified exam
+    if submission.exam_id != exam_id:
+        flash('Submission does not belong to the specified exam.', 'danger')
+        return redirect(url_for('exam.view_submissions', exam_id=exam_id))
+    
+    # Get the questions for this exam
+    questions = Question.query.filter_by(exam_id=exam_id).order_by(Question.order).all()
+    
+    # Check if this submission already has answers
+    existing_answers = SubmissionAnswer.query.filter_by(submission_id=submission_id).all()
+    
+    # If there are existing answers, redirect to view submission
+    if existing_answers and request.method == 'GET':
+        flash('This submission already has answers. You can view them below.', 'info')
+        return redirect(url_for('exam.view_submission', exam_id=exam_id, submission_id=submission_id))
+    
+    # If form is submitted (POST request)
+    if request.method == 'POST':
+        try:
+            total_score = 0
+            
+            # Process each question's manual answer
+            for question in questions:
+                answer_text = request.form.get(f'answer_{question.id}')
+                
+                if not answer_text:
+                    answer_text = "No answer provided."
+                
+                # Evaluate the answer
+                similarity_score, keyword_score, feedback = evaluate_answer(
+                    answer_text, 
+                    question.answer_key,
+                    question.keywords,
+                    question.question_type
+                )
+                
+                # Calculate final score
+                score = calculate_score(similarity_score, keyword_score, question.max_score)
+                total_score += score
+                
+                # Create or update submission answer record
+                existing_answer = SubmissionAnswer.query.filter_by(
+                    submission_id=submission_id, 
+                    question_id=question.id
+                ).first()
+                
+                if existing_answer:
+                    existing_answer.extracted_text = answer_text
+                    existing_answer.score = score
+                    existing_answer.similarity_score = similarity_score
+                    existing_answer.feedback = feedback
+                else:
+                    submission_answer = SubmissionAnswer(
+                        submission_id=submission_id,
+                        question_id=question.id,
+                        extracted_text=answer_text,
+                        score=score,
+                        similarity_score=similarity_score,
+                        feedback=feedback
+                    )
+                    db.session.add(submission_answer)
+            
+            # Update total score
+            submission.total_score = total_score
+            db.session.commit()
+            
+            flash('Answers saved and evaluated successfully!', 'success')
+            return redirect(url_for('exam.view_submission', exam_id=exam_id, submission_id=submission_id))
+            
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error processing manual answers: {e}")
+            flash(f'Error processing answers: {str(e)}', 'danger')
+    
+    # For GET request, prepare the form for manual entry
+    return render_template(
+        'manual_entry.html', 
+        exam=exam, 
+        submission=submission, 
+        questions=questions
+    )
 
 @exam_bp.route('/exam/<int:exam_id>/submissions')
 @login_required

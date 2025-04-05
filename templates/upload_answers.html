@@ -102,6 +102,16 @@
               </div>
             </div>
             
+            <div class="mb-3 form-check">
+              {{ form.use_manual_entry(class="form-check-input", id="use_manual_entry") }}
+              <label class="form-check-label" for="use_manual_entry">
+                {{ form.use_manual_entry.label.text }}
+              </label>
+              <div class="form-text">
+                Check this option if OCR fails to extract text properly and you want to manually enter the answer text later.
+              </div>
+            </div>
+            
             <div class="preview-container mt-3 border rounded p-2" id="pdf-preview-container">
               <!-- PDF will be rendered here with navigation controls -->
               <div class="text-center text-muted p-4">

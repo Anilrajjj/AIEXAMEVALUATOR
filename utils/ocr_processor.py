@@ -38,14 +38,21 @@ def preprocess_image(image, is_handwritten=False):
             gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
         
         if is_handwritten:
-            # Special processing for handwritten text
+            # Enhanced processing for handwritten text
             
-            # Apply Gaussian blur to reduce noise
-            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            # Apply bilateral filter - preserves edges better while removing noise
+            filtered = cv2.bilateralFilter(gray, 11, 17, 17)
+            
+            # Apply Gaussian blur to further reduce noise
+            blurred = cv2.GaussianBlur(filtered, (5, 5), 0)
+            
+            # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to enhance contrast
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            enhanced = clahe.apply(blurred)
             
             # Apply adaptive thresholding - better for handwritten text with varying intensity
             thresh = cv2.adaptiveThreshold(
-                blurred, 
+                enhanced, 
                 255, 
                 cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
                 cv2.THRESH_BINARY_INV, 
@@ -333,8 +340,15 @@ def process_file(file_path, is_handwritten=True):
                         page = doc.load_page(page_num)
                         page_text = page.get_text()
                         
-                        # Clean the text of any problematic characters
+                        # Enhanced text cleaning for better readability
+                        # Remove control characters and non-printable characters
                         page_text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', page_text)
+                        # Remove excessive whitespace
+                        page_text = re.sub(r'\s+', ' ', page_text)
+                        # Clean up paragraph breaks for better readability
+                        page_text = re.sub(r'(\. |\? |\! )([A-Z])', r'.\n\2', page_text)
+                        # Restore proper indentation for paragraphs
+                        page_text = re.sub(r'\n', '\n    ', page_text)
                         
                         # Add page marker and text to the result
                         page_marker = f"\n--- Page {page_num + 1} ---\n"
@@ -363,8 +377,15 @@ def process_file(file_path, is_handwritten=True):
                 from pdfminer.high_level import extract_text
                 extracted_text = extract_text(file_path)
                 
-                # Clean NUL bytes and other control characters
+                # Enhanced text cleaning for better readability
+                # Remove control characters and non-printable characters
                 extracted_text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', extracted_text)
+                # Remove excessive whitespace while preserving paragraph structure
+                extracted_text = re.sub(r'[ \t]+', ' ', extracted_text)
+                # Clean up paragraph breaks for better readability
+                extracted_text = re.sub(r'(\. |\? |\! )([A-Z])', r'.\n\n\2', extracted_text)
+                # Add indentation for paragraphs
+                extracted_text = re.sub(r'\n([A-Za-z])', r'\n    \1', extracted_text)
                 
                 if len(extracted_text.strip()) > 200:
                     logger.info("Successfully extracted text with pdfminer")
