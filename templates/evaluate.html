@@ -70,7 +70,27 @@
           <div class="col-lg-6">
             <h6>Student's Answer:</h6>
             <div class="p-3 bg-dark bg-opacity-10 rounded student-answer">
-              {{ answer.extracted_text }}
+              {% if answer.extracted_text %}
+                <!-- Process the extracted text to display properly -->
+                {% set lines = answer.extracted_text.split('\n') %}
+                {% for line in lines %}
+                  <!-- Handle page markers differently -->
+                  {% if line.strip().startswith('---') and 'Page' in line %}
+                    <div class="mt-2 mb-2 text-primary border-bottom border-primary small">
+                      <i class="fas fa-file-alt me-1"></i>{{ line.strip() }}
+                    </div>
+                  {% else %}
+                    <!-- Display normal text with proper formatting -->
+                    {% if line.strip() %}
+                      <p class="mb-1">{{ line }}</p>
+                    {% else %}
+                      <br>
+                    {% endif %}
+                  {% endif %}
+                {% endfor %}
+              {% else %}
+                <p class="text-muted fst-italic">No text extracted</p>
+              {% endif %}
             </div>
             
             <div class="mt-3">
@@ -126,8 +146,43 @@
 <script>
   // Highlight keywords in student answers
   document.addEventListener('DOMContentLoaded', function() {
-    // You could add more client-side functionality here
-    // For example, visualizing the evaluation or adding interactive elements
+    // Format and style the student answers for better readability
+    const studentAnswers = document.querySelectorAll('.student-answer');
+    
+    studentAnswers.forEach(answerDiv => {
+      // Add some CSS styling for better readability
+      const paragraphs = answerDiv.querySelectorAll('p');
+      paragraphs.forEach(p => {
+        // Check if this paragraph is a page marker
+        if (p.textContent.includes('--- Page')) {
+          p.style.color = '#007bff';
+          p.style.fontWeight = 'bold';
+          p.style.borderBottom = '1px solid #007bff';
+          p.style.padding = '3px 0';
+        }
+      });
+      
+      // Add keyword highlighting if appropriate
+      const questionCard = answerDiv.closest('.card');
+      const keywordSpans = questionCard.querySelectorAll('.badge.bg-info');
+      
+      if (keywordSpans.length > 0) {
+        const keywords = Array.from(keywordSpans).map(span => span.textContent.trim());
+        
+        // Highlight keywords in the student's answer
+        const text = answerDiv.innerHTML;
+        let highlightedText = text;
+        
+        keywords.forEach(keyword => {
+          if (keyword.length > 2) { // Avoid highlighting very short words
+            const regex = new RegExp('\\b(' + keyword + ')\\b', 'gi');
+            highlightedText = highlightedText.replace(regex, '<mark>$1</mark>');
+          }
+        });
+        
+        answerDiv.innerHTML = highlightedText;
+      }
+    });
   });
 </script>
 {% endblock %}

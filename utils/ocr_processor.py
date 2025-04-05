@@ -8,6 +8,7 @@ import io
 from werkzeug.utils import secure_filename
 import cv2
 import numpy as np
+import fitz  # PyMuPDF
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -310,69 +311,163 @@ def process_file(file_path, is_handwritten=True):
     # Log the processing attempt
     logger.info(f"Processing file: {file_path} (Handwritten: {is_handwritten})")
     
-    # EMERGENCY FIX: Use fallback method for all PDF files if we're in a limited environment
+    # Process PDF files with multiple extraction methods
     if file_ext == '.pdf':
         try:
-            # Try to use pdfminer first (no OCR, just text extraction, minimal memory use)
-            logger.info("Using direct PDF text extraction (no OCR) to avoid memory issues")
-            from pdfminer.high_level import extract_text
-            extracted_text = extract_text(file_path)
+            # First try PyMuPDF for direct text extraction (most efficient method)
+            logger.info("Using PyMuPDF for PDF text extraction")
+            full_text = ""
+            page_count = 0
             
-            if len(extracted_text.strip()) > 50:
-                logger.info("Successfully extracted text directly from PDF")
-                return extracted_text
+            try:
+                # Open the PDF with PyMuPDF
+                doc = fitz.open(file_path)
+                
+                # Get page count
+                page_count = len(doc)
+                logger.info(f"PDF contains {page_count} pages")
+                
+                # Extract text from each page
+                for page_num in range(page_count):
+                    try:
+                        page = doc.load_page(page_num)
+                        page_text = page.get_text()
+                        
+                        # Clean the text of any problematic characters
+                        page_text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', page_text)
+                        
+                        # Add page marker and text to the result
+                        page_marker = f"\n--- Page {page_num + 1} ---\n"
+                        full_text += page_marker + page_text.strip() + "\n"
+                    except Exception as page_err:
+                        logger.error(f"Error extracting text from page {page_num + 1}: {page_err}")
+                        full_text += f"\n--- Page {page_num + 1} ---\n[Error: Could not extract text from this page]\n"
+                
+                # Close the document
+                doc.close()
+                
+                # Check if we have meaningful text
+                if len(full_text.strip()) > 200:
+                    logger.info("Successfully extracted text using PyMuPDF")
+                    return full_text
+                
+                logger.info("PyMuPDF extraction produced limited text, trying other methods")
+                
+            except Exception as pymupdf_err:
+                logger.error(f"PyMuPDF extraction error: {pymupdf_err}")
+                logger.info("Falling back to alternative extraction methods")
             
-            # If pdfminer failed to extract meaningful text, try a very simple extraction
-            with open(file_path, 'rb') as pdf_file:
-                # Read content and filter out NULL bytes and other problematic characters
-                raw_content = pdf_file.read()
-                # Filter out NULL bytes before decoding
-                filtered_content = bytearray([b for b in raw_content if b != 0])
-                text_content = filtered_content.decode('utf-8', errors='ignore')
+            # Try pdfminer as a second option
+            logger.info("Using pdfminer for PDF text extraction")
+            try:
+                from pdfminer.high_level import extract_text
+                extracted_text = extract_text(file_path)
                 
-                # Clean the text further
-                import re
-                # Remove control characters except newlines and tabs
-                text_content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text_content)
-                simple_text = ' '.join(text_content.split())
+                # Clean NUL bytes and other control characters
+                extracted_text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', extracted_text)
                 
-                if len(simple_text) > 100:
-                    logger.info("Used simple text extraction as fallback")
-                    return simple_text
-                
-            # As a last resort, return a placeholder message instead of running full OCR
-            # This prevents memory errors while still allowing the system to function
-            logger.warning("Unable to extract text from PDF, returning placeholder to avoid memory issues")
+                if len(extracted_text.strip()) > 200:
+                    logger.info("Successfully extracted text with pdfminer")
+                    
+                    # Format the text with page breaks for better readability
+                    formatted_text = ""
+                    pages = extracted_text.split("\f")  # Form feed character often separates PDF pages
+                    
+                    for i, page in enumerate(pages):
+                        if page.strip():
+                            formatted_text += f"\n--- Page {i + 1} ---\n{page.strip()}\n"
+                    
+                    return formatted_text if formatted_text.strip() else extracted_text
+            except Exception as pdfminer_err:
+                logger.error(f"pdfminer extraction error: {pdfminer_err}")
+            
+            # If direct text extraction methods fail, try our fallback with binary filtering
+            try:
+                logger.info("Using binary filtering for PDF extraction")
+                with open(file_path, 'rb') as pdf_file:
+                    # Read content and filter out NULL bytes and other problematic characters
+                    raw_content = pdf_file.read()
+                    # Filter out NULL bytes before decoding
+                    filtered_content = bytearray([b for b in raw_content if b != 0])
+                    text_content = filtered_content.decode('utf-8', errors='ignore')
+                    
+                    # Clean the text further
+                    # Remove control characters except newlines and tabs
+                    text_content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text_content)
+                    
+                    # If we have meaningful content, return it
+                    if len(text_content.strip()) > 200:
+                        logger.info("Successfully extracted text using binary filtering")
+                        return f"[Extracted content from {os.path.basename(file_path)}]\n{text_content}"
+            except Exception as binary_err:
+                logger.error(f"Binary filtering error: {binary_err}")
+            
+            # For handwritten content, try OCR as a last resort
+            if is_handwritten:
+                try:
+                    logger.info("Attempting OCR processing for handwritten content")
+                    ocr_text = extract_text_from_pdf(file_path)
+                    
+                    if len(ocr_text.strip()) > 200:
+                        logger.info("Successfully extracted text using OCR")
+                        return ocr_text
+                except Exception as ocr_err:
+                    logger.error(f"OCR processing error: {ocr_err}")
+            
+            # If all methods fail, return informative message with detected page count
+            logger.warning("All extraction methods failed. Returning basic PDF info.")
             return f"[TEXT EXTRACTION FROM {os.path.basename(file_path)}]\n" + \
-                   "This PDF appears to contain primarily handwritten or image-based content.\n" + \
-                   "Please note that the system has extracted only basic metadata to avoid memory issues.\n" + \
-                   "For better results, consider uploading individual image files of each page."
+                   f"This PDF contains {page_count if page_count > 0 else 'multiple'} pages.\n" + \
+                   "The system detected this document contains primarily scanned or image-based content.\n" + \
+                   "For more accurate results, try uploading a PDF with embedded text."
                 
-        except Exception as e:
-            logger.error(f"Error in emergency text extraction: {e}")
-            return f"[Error processing PDF: Memory safe mode enabled]\nPlease try uploading image files instead."
+        except Exception as pdf_err:
+            logger.error(f"PDF processing error: {pdf_err}")
+            return f"[Error processing PDF: {str(pdf_err)}]"
             
-    elif file_ext in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']:
+    elif file_ext in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif']:
         try:
-            # For single images, we can still try OCR with reduced parameters
+            # For single images, use optimized OCR with size check
             # Get image dimensions
             from PIL import Image
             img = Image.open(file_path)
             width, height = img.size
             
-            # If the image is very large, just return a placeholder
+            # If the image is very large, resize it to save memory
             if width > 2000 or height > 2000:
-                logger.warning(f"Image is too large ({width}x{height}), skipping OCR to avoid memory issues")
-                return f"[Image size: {width}x{height}]\nThe image is too large for OCR processing.\nPlease resize the image to below 2000x2000 pixels for better results."
+                logger.warning(f"Image is large ({width}x{height}), resizing for OCR processing")
+                # Calculate new dimensions while maintaining aspect ratio
+                if width > height:
+                    new_width = 2000
+                    new_height = int(height * (new_width / width))
+                else:
+                    new_height = 2000
+                    new_width = int(width * (new_height / height))
+                
+                # Create a temporary resized image
+                img = img.resize((new_width, new_height), Image.LANCZOS)
+                temp_path = f"{file_path}_resized.jpg"
+                img.save(temp_path)
+                
+                # Process the resized image
+                result = extract_text_from_image(temp_path)
+                
+                # Clean up
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+                
+                return result
             
-            # For smaller images, use the optimized OCR extraction
+            # For smaller images, use the optimized OCR extraction directly
             return extract_text_from_image(file_path)
         except Exception as e:
             logger.error(f"Error processing image: {e}")
             return f"[Error processing image: {str(e)}]"
     else:
         logger.error(f"Unsupported file format: {file_ext}")
-        return ""
+        return f"[Unsupported file type: {file_ext}]"
 
 def save_uploaded_file(uploaded_file, upload_folder):
     """Save an uploaded file and return the path"""
@@ -386,32 +481,49 @@ def extract_text_segments(text, num_questions):
     """
     Attempt to segment extracted text into different answers
     based on question numbers or patterns
+    
+    Args:
+        text: The extracted text to segment
+        num_questions: Number of questions expected
+        
+    Returns:
+        List of text segments corresponding to answers
     """
     try:
-        # Remove any page markers from OCR
-        text = re.sub(r'--- Page \d+ ---', '', text)
+        # First mark the page boundaries so we can preserve them in the final output
+        # Replace page markers with a special token we can restore later
+        cleaned_text = re.sub(r'(\n---\s*Page\s+\d+\s*---\s*\n)', r'PAGE_MARKER\1PAGE_MARKER', text)
+        
+        # Also handle any PDF-specific formatting issues
+        # Replace multiple consecutive newlines with just two
+        cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text)
+        
+        # Remove any remaining control characters
+        cleaned_text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', cleaned_text)
+        
+        logger.debug(f"Cleaned text for segmentation, original length: {len(text)}, cleaned length: {len(cleaned_text)}")
         
         # Try multiple segmentation strategies
         logger.debug(f"Attempting to segment text into {num_questions} answers")
         
         # Strategy 1: Split by question number patterns (Q1, Q2, Question 1, etc.)
-        segments = segment_by_question_markers(text, num_questions)
+        segments = segment_by_question_markers(cleaned_text, num_questions)
         
         # Strategy 2: If first strategy failed, try to identify segments by looking for 
         # any number followed by a period or parenthesis
         if len(segments) != num_questions:
             logger.debug("First segmentation strategy failed, trying alternate pattern matching")
-            segments = segment_by_number_indicators(text, num_questions)
+            segments = segment_by_number_indicators(cleaned_text, num_questions)
         
         # Strategy 3: If still unsuccessful, try to split by paragraph breaks
         if len(segments) != num_questions:
             logger.debug("Second segmentation strategy failed, trying paragraph separation")
-            segments = segment_by_paragraphs(text, num_questions)
+            segments = segment_by_paragraphs(cleaned_text, num_questions)
         
         # Final fallback: If all else fails, just divide the text equally
         if len(segments) != num_questions:
             logger.warning(f"All segmentation strategies failed. Using equal division of text.")
-            segments = segment_equally(text, num_questions)
+            segments = segment_equally(cleaned_text, num_questions)
             
         # Ensure we return exactly num_questions segments
         if len(segments) < num_questions:
@@ -419,13 +531,34 @@ def extract_text_segments(text, num_questions):
             last_segment = segments[-1] if segments else "No text available"
             while len(segments) < num_questions:
                 segments.append(f"{last_segment} (continued)")
+        elif len(segments) > num_questions:
+            # If we have too many segments, combine the extra ones with the last segment
+            extra_segments = segments[num_questions:]
+            segments = segments[:num_questions-1] + [segments[num_questions-1] + "\n\n" + "\n\n".join(extra_segments)]
+        
+        # Clean up each segment
+        for i in range(len(segments)):
+            # Restore page markers for better readability
+            segment_text = segments[i]
+            
+            # Replace our special marker with the actual page marker
+            if 'PAGE_MARKER' in segment_text:
+                # Extract and format page markers
+                segment_text = re.sub(r'PAGE_MARKER(\n---\s*Page\s+\d+\s*---\s*\n)PAGE_MARKER', 
+                                     r'\1', segment_text)
+            
+            # Remove excessive whitespace but preserve newlines for page markers
+            segment_text = re.sub(r'[ \t]+', ' ', segment_text).strip()
+            
+            # Add a header for better readability
+            segments[i] = f"Answer {i+1}:\n{segment_text}"
         
         return segments[:num_questions]
         
     except Exception as e:
         logger.error(f"Error in text segmentation: {e}")
         # Return basic segments if all else fails
-        return ["Error segmenting text"] * num_questions
+        return [f"Answer {i+1}:\nError segmenting text" for i in range(num_questions)]
 
 def segment_by_question_markers(text, num_questions):
     """Strategy 1: Look for typical question markers"""
