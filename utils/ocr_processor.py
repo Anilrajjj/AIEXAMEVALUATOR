@@ -15,27 +15,44 @@ logger = logging.getLogger(__name__)
 
 def preprocess_image(image, is_handwritten=False):
     """
-    Preprocess image for better OCR results
+    Google Lens-style preprocess image for better OCR results
     
     Args:
         image: PIL Image object
         is_handwritten: Boolean flag to indicate if the image contains handwritten text
     
     Returns:
-        Processed PIL Image
+        Tuple of:
+        - Processed PIL Image for OCR
+        - PIL Image with bounding boxes visualized (for display)
+        - List of dictionaries with text region information
     """
     try:
         # Convert PIL Image to numpy array
         img_array = np.array(image)
+        original_img = img_array.copy()  # Keep a copy for visualization
         
         # Check if the image is already grayscale
         if len(img_array.shape) == 2:
             gray = img_array  # Already grayscale
+            # Convert to 3-channel for visualization
+            original_img = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         elif len(img_array.shape) == 3 and img_array.shape[2] == 1:
             gray = img_array[:, :, 0]  # Single channel
+            original_img = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         else:
-            # Convert to grayscale
-            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+            # Convert to grayscale for processing
+            if img_array.shape[2] == 3:  # RGB
+                gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+                original_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            elif img_array.shape[2] == 4:  # RGBA
+                gray = cv2.cvtColor(img_array, cv2.COLOR_RGBA2GRAY)
+                original_img = cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
+            else:
+                gray = img_array[:, :, 0]
+        
+        # Create a structuring element for morphological operations
+        rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 3))
         
         if is_handwritten:
             # Enhanced processing for handwritten text
@@ -70,29 +87,99 @@ def preprocess_image(image, is_handwritten=False):
             # Perform opening to remove small noise
             opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel)
             
+            # Google Lens style: Detect text regions using morphological operations
+            # Dilate to connect characters in text lines
+            dilated = cv2.dilate(opened, rect_kernel, iterations=1)
+            
             # Invert back to black text on white background for OCR
             processed = cv2.bitwise_not(opened)
-            
-            return Image.fromarray(processed)
         else:
             # Standard processing for printed text
             # Apply thresholding to get rid of background noise
             _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             
-            # Apply dilation to make text more solid
-            kernel = np.ones((1, 1), np.uint8)
-            dilated = cv2.dilate(thresh, kernel, iterations=1)
+            # Apply dilation to connect characters in text lines
+            dilated = cv2.dilate(thresh, rect_kernel, iterations=1)
             
-            return Image.fromarray(dilated)
+            # Apply dilation to make text more solid for OCR
+            kernel = np.ones((1, 1), np.uint8)
+            processed = cv2.dilate(thresh, kernel, iterations=1)
+        
+        # Find contours - this is where we detect text regions like Google Lens
+        # We use the dilated image which has connected text components
+        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Create a copy of the original for visualization
+        visualization_img = original_img.copy()
+        
+        # Process text regions
+        text_regions = []
+        region_id = 1
+        
+        for contour in contours:
+            # Get bounding rectangle
+            x, y, w, h = cv2.boundingRect(contour)
+            
+            # Filter out very small regions that are likely noise
+            if w < 15 or h < 10 or w * h < 100:
+                continue
+                
+            # Filter out regions with extreme aspect ratios
+            aspect_ratio = w / float(h) if h > 0 else 0
+            if aspect_ratio > 15 or aspect_ratio < 0.1:
+                continue
+            
+            # Draw rectangle on visualization image
+            cv2.rectangle(visualization_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            
+            # Add region ID text
+            cv2.putText(visualization_img, f"#{region_id}", (x, y-5), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                
+            # Store region information
+            text_regions.append({
+                'id': region_id,
+                'x': x,
+                'y': y,
+                'width': w,
+                'height': h,
+                'aspect_ratio': aspect_ratio,
+            })
+            
+            region_id += 1
+        
+        # Sort regions top-to-bottom for reading order
+        text_regions.sort(key=lambda r: r['y'])
+        
+        # Return processed image for OCR, visualization image, and region information
+        return Image.fromarray(processed), Image.fromarray(cv2.cvtColor(visualization_img, cv2.COLOR_BGR2RGB)), text_regions
+        
     except Exception as e:
         logger.error(f"Error preprocessing image: {e}")
-        # Return the original image if preprocessing fails
-        return image
+        # Return original images if preprocessing fails
+        if isinstance(image, Image.Image):
+            return image, image, []
+        else:
+            # Convert numpy array to PIL if needed
+            try:
+                pil_image = Image.fromarray(np.uint8(image))
+                return pil_image, pil_image, []
+            except:
+                # Create a blank image as fallback
+                blank = Image.new('RGB', (100, 100), color='white')
+                return blank, blank, []
 
 def extract_text_from_image(image_path):
-    """Extract text from an image file using PyTesseract OCR, with memory optimizations"""
+    """
+    Extract text from an image file using PyTesseract OCR with Google Lens-like 
+    region detection for better results
+    """
     try:
         logger.info(f"Extracting text from image: {image_path}")
+        
+        # Create uploads directory for saving visualization if it doesn't exist
+        viz_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'static', 'visualizations')
+        os.makedirs(viz_dir, exist_ok=True)
         
         # Load and resize the image to save memory
         try:
@@ -100,13 +187,13 @@ def extract_text_from_image(image_path):
             
             # Resize large images to reduce memory usage
             width, height = image.size
-            if width > 1000 or height > 1000:
+            if width > 1200 or height > 1200:
                 # Calculate new dimensions while maintaining aspect ratio
                 if width > height:
-                    new_width = 1000
+                    new_width = 1200
                     new_height = int(height * (new_width / width))
                 else:
-                    new_height = 1000
+                    new_height = 1200
                     new_width = int(width * (new_height / height))
                 
                 logger.info(f"Resizing image from {width}x{height} to {new_width}x{new_height} to save memory")
@@ -115,51 +202,132 @@ def extract_text_from_image(image_path):
             logger.error(f"Error loading or resizing image: {img_err}")
             return f"[Error loading image: {str(img_err)}]"
         
-        # Process with more memory-efficient settings
+        # Process with Google Lens-like region detection
         try:
-            # Use memory-efficient OCR configuration
-            # OEM 1: Legacy Tesseract engine (less memory intensive)
-            # PSM 6: Assume a single uniform block of text
-            custom_config = r'--oem 1 --psm 6'
+            # Process with autodetection - returns processed image, visualization, and text regions
+            processed_image, visualization_img, text_regions = preprocess_image(image, is_handwritten=True)
             
-            # Process with handwritten mode if specified
-            processed_image = preprocess_image(image, is_handwritten=True)
+            # Save visualization image for display
+            base_filename = os.path.basename(image_path)
+            viz_filename = f"viz_{base_filename.split('.')[0]}.jpg"
+            viz_path = os.path.join(viz_dir, viz_filename)
+            visualization_img.save(viz_path)
+            logger.info(f"Saved visualization to {viz_path}")
             
-            # Extract text with timeout to prevent process hanging
-            text = pytesseract.image_to_string(
-                processed_image,
-                config=custom_config,
-                lang='eng',
-                timeout=30
-            )
+            # If no text regions found, try again with printed text settings
+            if len(text_regions) == 0:
+                logger.info("No text regions detected with handwritten settings, trying printed text mode")
+                processed_image, visualization_img, text_regions = preprocess_image(image, is_handwritten=False)
+                
+                # Save updated visualization
+                visualization_img.save(viz_path)
             
-            # Clean up resources immediately
-            del processed_image
+            # Google Lens style: Process each text region separately for better accuracy
+            full_text = ""
             
-            if len(text.strip()) < 20:
-                logger.info("Handwritten text detection yielded little text. Trying printed text processing.")
-                # Try again with printed text mode
-                processed_image = preprocess_image(image, is_handwritten=False)
-                alt_text = pytesseract.image_to_string(
+            if text_regions:
+                # Use OCR on each detected region for better accuracy
+                # OEM 1: Legacy Tesseract engine (less memory intensive)
+                # PSM 6: Assume a single uniform block of text
+                custom_config = r'--oem 1 --psm 6'
+                
+                # Convert processed image to numpy for cropping regions
+                processed_np = np.array(processed_image)
+                
+                for region in text_regions:
+                    try:
+                        # Extract region coordinates
+                        x, y, w, h = region['x'], region['y'], region['width'], region['height']
+                        
+                        # Ensure coordinates are within image bounds
+                        if y >= processed_np.shape[0] or x >= processed_np.shape[1]:
+                            continue
+                            
+                        # Add padding around the region for better OCR results
+                        pad = 5
+                        y1 = max(0, y - pad)
+                        y2 = min(processed_np.shape[0], y + h + pad)
+                        x1 = max(0, x - pad)
+                        x2 = min(processed_np.shape[1], x + w + pad)
+                        
+                        # Extract region
+                        region_img = processed_np[y1:y2, x1:x2]
+                        
+                        # Skip empty regions
+                        if region_img.size == 0:
+                            continue
+                            
+                        # Convert region to PIL image
+                        region_pil = Image.fromarray(region_img)
+                        
+                        # Extract text from this region
+                        region_text = pytesseract.image_to_string(
+                            region_pil,
+                            config=custom_config,
+                            lang='eng',
+                            timeout=10
+                        )
+                        
+                        # Add region text to full text with region identifier
+                        if region_text.strip():
+                            full_text += f"Region #{region['id']} ({x},{y}): {region_text.strip()}\n\n"
+                    except Exception as region_err:
+                        logger.error(f"Error processing region {region['id']}: {region_err}")
+                
+                # If region-based extraction yielded too little text, try whole image
+                if len(full_text.strip()) < 20:
+                    logger.info("Region-based text detection yielded little text. Trying whole image.")
+                    whole_image_text = pytesseract.image_to_string(
+                        processed_image,
+                        config=custom_config,
+                        lang='eng',
+                        timeout=30
+                    )
+                    
+                    if len(whole_image_text.strip()) > len(full_text.strip()):
+                        full_text = whole_image_text
+            else:
+                # If no regions detected, process the entire image
+                logger.info("No text regions detected, processing entire image")
+                custom_config = r'--oem 1 --psm 6'
+                full_text = pytesseract.image_to_string(
                     processed_image,
                     config=custom_config,
                     lang='eng',
                     timeout=30
                 )
+            
+            # If still not getting good results, try with printed text mode
+            if len(full_text.strip()) < 20:
+                logger.info("Handwritten mode yielded little text. Trying printed text processing.")
+                processed_image, viz2, regions2 = preprocess_image(image, is_handwritten=False)
+                
+                # Save new visualization
+                viz2.save(viz_path)
+                
+                alt_text = pytesseract.image_to_string(
+                    processed_image,
+                    config=r'--oem 1 --psm 6',
+                    lang='eng',
+                    timeout=30
+                )
                 
                 # Use the better result
-                if len(alt_text.strip()) > len(text.strip()):
+                if len(alt_text.strip()) > len(full_text.strip()):
                     logger.info("Printed text processing yielded better results.")
-                    text = alt_text
-                
-                # Clean up
-                del processed_image
+                    full_text = alt_text
             
-            # Clean up the original image
+            # Clean up resources
+            del processed_image
             del image
             
-            logger.debug(f"Extracted text from image: {len(text)} characters")
-            return text
+            # Add visualization info to the output
+            visualization_url = f"/static/visualizations/{viz_filename}"
+            result_text = f"[GoogleLens-style text detection enabled. View detected regions <a href='{visualization_url}' target='_blank'>here</a>]\n\n"
+            result_text += full_text
+            
+            logger.debug(f"Extracted text from image: {len(full_text)} characters from {len(text_regions)} regions")
+            return result_text
             
         except Exception as ocr_err:
             logger.error(f"OCR error: {ocr_err}")
@@ -253,21 +421,94 @@ def extract_text_from_pdf(pdf_path):
                             new_height = int(height * (new_width / width))
                             img = img.resize((new_width, new_height))
                         
-                        # Preprocess the image with specified mode
-                        processed_page = preprocess_image(img, is_handwritten=True)
+                        # Create visualizations directory if it doesn't exist
+                        viz_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'static', 'visualizations')
+                        os.makedirs(viz_dir, exist_ok=True)
                         
-                        # Use a simpler OCR configuration to reduce memory usage
-                        # PSM 6: Assume a single uniform block of text
-                        # OEM 1: Use the legacy Tesseract engine which is more memory efficient
-                        custom_config = r'--oem 1 --psm 6'
+                        # Preprocess the image with Google Lens-style region detection
+                        processed_page, viz_image, text_regions = preprocess_image(img, is_handwritten=True)
                         
-                        # Extract text using PyTesseract with timeout to prevent hanging
-                        text = pytesseract.image_to_string(
-                            processed_page,
-                            config=custom_config,
-                            lang='eng',  # Explicitly use English language
-                            timeout=30   # Set timeout to prevent process hanging
-                        )
+                        # Save the visualization image
+                        viz_filename = f"viz_pdf_p{page_num}_{os.path.basename(pdf_path).split('.')[0]}.jpg"
+                        viz_path = os.path.join(viz_dir, viz_filename)
+                        viz_image.save(viz_path)
+                        
+                        # Process each detected text region separately for better results
+                        page_text = ""
+                        
+                        if text_regions:
+                            # Process individual regions
+                            custom_config = r'--oem 1 --psm 6'  # Memory-efficient config
+                            
+                            # Convert processed image to numpy for cropping
+                            processed_np = np.array(processed_page)
+                            
+                            # Process each region
+                            for region in text_regions:
+                                try:
+                                    # Extract region coordinates
+                                    x, y, w, h = region['x'], region['y'], region['width'], region['height']
+                                    
+                                    # Ensure coordinates are within image bounds
+                                    if y >= processed_np.shape[0] or x >= processed_np.shape[1]:
+                                        continue
+                                        
+                                    # Add padding around the region for better OCR results
+                                    pad = 5
+                                    y1 = max(0, y - pad)
+                                    y2 = min(processed_np.shape[0], y + h + pad)
+                                    x1 = max(0, x - pad)
+                                    x2 = min(processed_np.shape[1], x + w + pad)
+                                    
+                                    # Extract region
+                                    region_img = processed_np[y1:y2, x1:x2]
+                                    
+                                    # Skip empty regions
+                                    if region_img.size == 0:
+                                        continue
+                                        
+                                    # Convert region to PIL image
+                                    region_pil = Image.fromarray(region_img)
+                                    
+                                    # Extract text from this region
+                                    region_text = pytesseract.image_to_string(
+                                        region_pil,
+                                        config=custom_config,
+                                        lang='eng',
+                                        timeout=10
+                                    )
+                                    
+                                    # Add region text to full text with region identifier
+                                    if region_text.strip():
+                                        page_text += f"Region #{region['id']} ({x},{y}): {region_text.strip()}\n\n"
+                                except Exception as region_err:
+                                    logger.error(f"Error processing region {region['id']} on page {page_num}: {region_err}")
+                            
+                            # If region-based extraction yielded little text, try whole page
+                            if len(page_text.strip()) < 20:
+                                whole_page_text = pytesseract.image_to_string(
+                                    processed_page,
+                                    config=custom_config,
+                                    lang='eng',
+                                    timeout=30
+                                )
+                                
+                                if len(whole_page_text.strip()) > len(page_text.strip()):
+                                    page_text = whole_page_text
+                        else:
+                            # If no regions detected, process the entire page
+                            custom_config = r'--oem 1 --psm 6'
+                            page_text = pytesseract.image_to_string(
+                                processed_page,
+                                config=custom_config,
+                                lang='eng',
+                                timeout=30
+                            )
+                        
+                        # Add visualization info to the output
+                        visualization_url = f"/static/visualizations/{viz_filename}"
+                        text = f"[GoogleLens-style text detection enabled. View detected regions for page {page_num} <a href='{visualization_url}' target='_blank'>here</a>]\n\n"
+                        text += page_text
                         
                         full_text += f"\n--- Page {page_num} ---\n{text}\n"
                     except Exception as ocr_error:
