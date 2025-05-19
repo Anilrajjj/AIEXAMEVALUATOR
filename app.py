@@ -15,17 +15,18 @@ db = SQLAlchemy(model_class=Base)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
 
-# Use SQLite by default
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///instance/app.db"
-
-# Ensure we have a database URL
-if not app.config["SQLALCHEMY_DATABASE_URI"]:
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///instance/app.db"
-    logging.warning("No DATABASE_URL found. Using SQLite as fallback.")
+# Configure SQLite database
+db_path = os.path.join(os.getcwd(), 'instance', 'app.db')
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_recycle": 300,
     "pool_pre_ping": True,
 }
+
+# Ensure instance directory exists with proper permissions
+instance_path = os.path.join(os.getcwd(), 'instance')
+if not os.path.exists(instance_path):
+    os.makedirs(instance_path, mode=0o777)
 app.config["UPLOAD_FOLDER"] = "uploads"
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB max-limit
 
