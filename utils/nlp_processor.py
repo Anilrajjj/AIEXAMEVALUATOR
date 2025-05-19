@@ -11,18 +11,19 @@ from sklearn.metrics.pairwise import cosine_similarity
 # Setup logging
 logger = logging.getLogger(__name__)
 
-# Download and initialize NLTK resources
-required_resources = ['punkt', 'stopwords', 'wordnet', 'averaged_perceptron_tagger']
-for resource in required_resources:
-    try:
-        nltk.download(resource, quiet=True)
-        logger.info(f"NLTK resource '{resource}' downloaded successfully")
-    except Exception as e:
-        logger.warning(f"Error downloading {resource}: {e}")
+# Download required NLTK resources
+try:
+    nltk.download('punkt')
+    nltk.download('stopwords')
+    nltk.download('wordnet')
+    nltk.download('averaged_perceptron_tagger')
+    logger.info("NLTK resources downloaded successfully")
+except Exception as e:
+    logger.warning(f"Error downloading NLTK resources: {e}")
 
-# Initialize simple word tokenizer
-tokenizer = nltk.tokenize.word_tokenize
-logger.info("Using word tokenizer")
+# Initialize tokenizer using word_tokenize directly
+tokenizer = nltk.word_tokenize
+logger.info("Using basic word tokenizer")
 
 # Initialize lemmatizer
 lemmatizer = WordNetLemmatizer()
