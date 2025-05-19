@@ -14,6 +14,8 @@ db = SQLAlchemy(model_class=Base)
 # create the app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
+app.jinja_env.trim_blocks = True
+app.jinja_env.lstrip_blocks = True
 
 # Configure SQLite database
 db_path = os.path.join(os.getcwd(), 'instance', 'app.db')
