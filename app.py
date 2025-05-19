@@ -37,8 +37,13 @@ login_manager.login_view = 'auth.login'
 # Initialize db
 db.init_app(app)
 
-# Create uploads directory if it doesn't exist
+# Create required directories
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+os.makedirs("instance", exist_ok=True)
+
+# Initialize db tables in app context
+with app.app_context():
+    db.create_all()
 
 # Register blueprints
 from auth import auth_bp
