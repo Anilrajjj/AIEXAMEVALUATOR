@@ -6,28 +6,53 @@ from collections import Counter
 # Setup logging
 logger = logging.getLogger(__name__)
 
-def calculate_score(similarity_score, keyword_score, max_score=1.0, weight_similarity=0.7, weight_keyword=0.3):
+def calculate_score(similarity_score, keyword_score, max_score=1.0, answer_text=""):
     """
-    Calculate a final score based on similarity and keyword scores
+    Calculate score based on keywords, similar meanings, and answer length
     
     Args:
         similarity_score: Cosine similarity score (0-1)
         keyword_score: Keyword matching score (0-1)
         max_score: Maximum score for the question
-        weight_similarity: Weight for similarity score (default 0.7)
-        weight_keyword: Weight for keyword score (default 0.3)
+        answer_text: Student's answer text
     
     Returns:
-        final_score: Weighted score scaled to max_score
+        final_score: Integer score based on criteria
     """
-    # Calculate weighted combined score
-    combined_score = (similarity_score * weight_similarity) + (keyword_score * weight_keyword)
+    # Get answer length
+    answer_length = len(answer_text.split())
     
-    # Scale to max_score and convert to integer
-    final_score = combined_score * max_score
+    # Base score from keyword matching
+    base_score = keyword_score * max_score
     
-    # Round to the nearest integer
-    return int(round(final_score))
+    # Length-based scoring rules
+    if max_score <= 2:
+        # For 1-2 mark questions
+        min_words = 10
+        ideal_words = 30
+    else:
+        # For questions worth more than 2 marks
+        min_words = 50
+        ideal_words = 150
+    
+    # Adjust score based on length
+    if answer_length < min_words:
+        length_factor = 0.5
+    elif answer_length >= ideal_words:
+        length_factor = 1.0
+    else:
+        length_factor = 0.5 + (0.5 * (answer_length - min_words) / (ideal_words - min_words))
+    
+    # Consider similarity for similar meaning matches
+    meaning_bonus = similarity_score * 0.3 * max_score
+    
+    # Calculate final score
+    final_score = (base_score * length_factor) + meaning_bonus
+    
+    # Ensure score is an integer and within bounds
+    final_score = min(max_score, max(0, int(round(final_score))))
+    
+    return final_score
 
 def get_score_statistics(scores):
     """
