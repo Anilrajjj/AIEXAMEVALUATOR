@@ -108,24 +108,55 @@ def calculate_cosine_similarity(student_answer, answer_key):
         logger.error(f"Error calculating similarity: {e}")
         return 0
 
-def evaluate_answer(student_answer, answer_key, keywords=None, question_type='text'):
+def evaluate_answer(student_answer, answer_key, keywords, question_type):
+    """Evaluate a student's answer against the answer key using OpenAI API"""
     try:
-        # First, clean any NULL bytes and control characters before processing
-        student_answer = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', student_answer)
-        answer_key = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', answer_key)
+        import os
+        from openai import OpenAI
 
-        if keywords:
-            keywords = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', keywords)
+        client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
 
-        # For very short answers, keyword matching may be sufficient
+        # Construct the prompt
+        prompt = f"""
+        Question Type: {question_type}
+        Model Answer: {answer_key}
+        Required Keywords: {', '.join(keywords) if keywords else 'None'}
+        Student Answer: {student_answer}
+
+        Please evaluate the student's answer and provide:
+        1. Similarity score (0-1)
+        2. Keyword match score (0-1)
+        3. Brief constructive feedback
+        Format: score|keyword_score|feedback
+        """
+
+        # Get evaluation from OpenAI
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an expert educational evaluator. Evaluate answers fairly and provide constructive feedback."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=150
+        )
+
+        # Parse response
+        result = response.choices[0].message.content.strip().split('|')
+        if len(result) == 3:
+            similarity_score = float(result[0])
+            keyword_score = float(result[1])
+            feedback = result[2]
+        else:
+            raise ValueError("Invalid API response format")
+
+        return similarity_score, keyword_score, feedback
+    except Exception as e:
+        logger.error(f"Error in NLP evaluation: {str(e)}. Using fallback method.")
+        # Fallback to basic evaluation
+        similarity_score = calculate_cosine_similarity(student_answer, answer_key)
         keyword_result = keyword_matching(student_answer, answer_key, keywords)
         matching_keywords, missing_keywords, keyword_score = keyword_result
-
-        # Calculate similarity for text answers with additional semantic comparison
-        if question_type == 'text':
-            similarity_score = calculate_cosine_similarity(student_answer, answer_key)
-            # Add answer length information to feedback
-            word_count = len(student_answer.split())
 
         # Generate feedback
         feedback = ""
@@ -135,11 +166,7 @@ def evaluate_answer(student_answer, answer_key, keywords=None, question_type='te
         if missing_keywords:
             feedback += f"Consider including: {', '.join(missing_keywords)}."
 
-        return (similarity_score, keyword_score, feedback.strip())
-    except Exception as e:
-        # Log error and use fallback method
-        logger.error(f"Error in NLP evaluation: {e}. Using fallback method.")
-        return simple_evaluate_answer(student_answer, answer_key, keywords)
+        return similarity_score, keyword_score, feedback.strip()
 
 def simple_evaluate_answer(student_answer, answer_key, keywords=None):
     """
