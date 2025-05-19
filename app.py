@@ -15,12 +15,8 @@ db = SQLAlchemy(model_class=Base)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
 
-# configure PostgreSQL database 
-db_url = os.environ.get("DATABASE_URL", "sqlite:///instance/app.db")
-# Handle SQLAlchemy 1.4+ compatibility with postgres:// URLs
-if db_url and db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
-app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+# Use SQLite by default
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///instance/app.db"
 
 # Ensure we have a database URL
 if not app.config["SQLALCHEMY_DATABASE_URI"]:
