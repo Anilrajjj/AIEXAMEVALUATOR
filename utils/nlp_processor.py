@@ -12,20 +12,22 @@ from sklearn.metrics.pairwise import cosine_similarity
 logger = logging.getLogger(__name__)
 
 # Download required NLTK resources
-for resource in ['punkt', 'stopwords', 'wordnet']:
+required_resources = ['punkt', 'stopwords', 'wordnet', 'averaged_perceptron_tagger']
+for resource in required_resources:
     try:
         nltk.data.find(f'corpora/{resource}' if resource != 'punkt' else f'tokenizers/{resource}')
         logger.info(f"NLTK resource '{resource}' is already available")
     except LookupError:
         logger.info(f"Downloading NLTK resource '{resource}'")
-        nltk.download(resource)
+        nltk.download(resource, quiet=True)
 
-# Make sure punkt_tab is available
+# Initialize tokenizer without punkt_tab dependency
 try:
-    nltk.data.find('tokenizers/punkt_tab/english/')
-except LookupError:
-    logger.info("Downloading punkt_tab")
-    nltk.download('punkt')
+    tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
+    logger.info("Tokenizer initialized successfully")
+except Exception as e:
+    logger.warning(f"Error loading tokenizer: {e}")
+    tokenizer = None
 
 # Initialize lemmatizer
 lemmatizer = WordNetLemmatizer()
