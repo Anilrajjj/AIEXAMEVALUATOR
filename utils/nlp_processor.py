@@ -31,28 +31,26 @@ stop_words = set(stopwords.words('english'))
 
 def preprocess_text(text):
     """
-    Preprocess text for NLP analysis:
-    - Remove NUL bytes and control characters
-    - Convert to lowercase
-    - Remove punctuation
-    - Remove stopwords
-    - Lemmatize words
+    Preprocess text for NLP analysis with basic tokenization
     """
-    # First, clean any NULL bytes and control characters
+    if not text:
+        return ""
+        
+    # Clean any NULL bytes and control characters
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
-
+    
     # Convert to lowercase
     text = text.lower()
-
+    
     # Remove punctuation
     text = text.translate(str.maketrans('', '', string.punctuation))
-
-    # Tokenize
-    tokens = word_tokenize(text)
-
+    
+    # Simple word tokenization
+    tokens = text.split()
+    
     # Remove stopwords and lemmatize
     processed_tokens = [lemmatizer.lemmatize(token) for token in tokens if token not in stop_words]
-
+    
     return ' '.join(processed_tokens)
 
 def keyword_matching(student_answer, answer_key, keywords=None):
