@@ -25,4 +25,6 @@ dependencies = [
     "openai>=1.70.0",
     "pymupdf>=1.25.5",
     "anthropic>=0.49.0",
+    "requests>=2.32.4",
+    "google-cloud-vision>=3.10.2",
 ]
