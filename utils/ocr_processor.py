@@ -9,6 +9,10 @@ from werkzeug.utils import secure_filename
 import cv2
 import numpy as np
 import fitz  # PyMuPDF
+import base64
+import requests
+from google.cloud import vision
+import json
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -169,6 +173,140 @@ def preprocess_image(image, is_handwritten=False):
                 blank = Image.new('RGB', (100, 100), color='white')
                 return blank, blank, []
 
+def extract_text_with_google_vision(image_path):
+    """
+    Extract text using Google Vision API for better handwritten text recognition
+    """
+    try:
+        # Check if Google Vision client can be initialized
+        try:
+            client = vision.ImageAnnotatorClient()
+            logger.info("Using Google Vision API for OCR")
+        except Exception as vision_error:
+            logger.warning(f"Google Vision API not available: {vision_error}")
+            return None
+
+        # Read the image file
+        with open(image_path, 'rb') as image_file:
+            content = image_file.read()
+
+        # Create Vision API image object
+        image = vision.Image(content=content)
+
+        # Detect text in the image using document text detection (better for handwriting)
+        response = client.document_text_detection(image=image)
+        
+        if response.error.message:
+            logger.error(f'Google Vision API error: {response.error.message}')
+            return None
+
+        # Extract full text
+        full_text = response.full_text_annotation.text if response.full_text_annotation else ""
+        
+        # Also get detailed text annotations for better structure
+        texts = response.text_annotations
+        detailed_text = ""
+        
+        if texts:
+            # First annotation contains the full detected text
+            detailed_text = texts[0].description
+            
+        # Use the more complete result
+        result_text = detailed_text if len(detailed_text) > len(full_text) else full_text
+        
+        if result_text:
+            logger.info(f"Google Vision API extracted {len(result_text)} characters")
+            return f"[Google Vision API - Handwriting Optimized]\n{result_text}"
+        else:
+            logger.warning("Google Vision API returned empty result")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Google Vision API error: {e}")
+        return None
+
+def extract_text_with_azure_vision(image_path):
+    """
+    Extract text using Azure Computer Vision API for handwritten text
+    """
+    try:
+        # Azure Computer Vision endpoint and key (should be set as environment variables)
+        endpoint = os.getenv('AZURE_VISION_ENDPOINT')
+        key = os.getenv('AZURE_VISION_KEY')
+        
+        if not endpoint or not key:
+            logger.warning("Azure Vision API credentials not found")
+            return None
+            
+        logger.info("Using Azure Computer Vision API for OCR")
+        
+        # Prepare the image
+        with open(image_path, 'rb') as image_file:
+            image_data = image_file.read()
+        
+        # Azure OCR endpoint
+        ocr_url = f"{endpoint}/vision/v3.2/read/analyze"
+        
+        headers = {
+            'Ocp-Apim-Subscription-Key': key,
+            'Content-Type': 'application/octet-stream'
+        }
+        
+        # Submit image for analysis
+        response = requests.post(ocr_url, headers=headers, data=image_data)
+        
+        if response.status_code != 202:
+            logger.error(f"Azure Vision API request failed: {response.status_code}")
+            return None
+        
+        # Get operation location from response headers
+        operation_location = response.headers.get('Operation-Location')
+        if not operation_location:
+            logger.error("No operation location in Azure response")
+            return None
+        
+        # Poll for results
+        import time
+        max_attempts = 30
+        attempt = 0
+        
+        while attempt < max_attempts:
+            time.sleep(2)  # Wait 2 seconds between polls
+            
+            result_response = requests.get(operation_location, headers={'Ocp-Apim-Subscription-Key': key})
+            
+            if result_response.status_code == 200:
+                result = result_response.json()
+                
+                if result['status'] == 'succeeded':
+                    # Extract text from results
+                    extracted_text = ""
+                    
+                    if 'analyzeResult' in result and 'readResults' in result['analyzeResult']:
+                        for page in result['analyzeResult']['readResults']:
+                            for line in page.get('lines', []):
+                                extracted_text += line['text'] + '\n'
+                    
+                    if extracted_text:
+                        logger.info(f"Azure Vision API extracted {len(extracted_text)} characters")
+                        return f"[Azure Computer Vision - Handwriting Optimized]\n{extracted_text}"
+                    else:
+                        logger.warning("Azure Vision API returned empty result")
+                        return None
+                        
+                elif result['status'] == 'failed':
+                    logger.error("Azure Vision API analysis failed")
+                    return None
+                    
+            attempt += 1
+        
+        logger.error("Azure Vision API polling timeout")
+        return None
+        
+    except Exception as e:
+        logger.error(f"Azure Vision API error: {e}")
+        return None
+
 def extract_text_from_image(image_path):
     """
     Extract text from an image file using PyTesseract OCR with Google Lens-like 
@@ -202,6 +340,46 @@ def extract_text_from_image(image_path):
             logger.error(f"Error loading or resizing image: {img_err}")
             return f"[Error loading image: {str(img_err)}]"
 
+        # First try cloud-based OCR APIs for better handwritten text recognition
+        cloud_result = None
+        
+        # Try multiple cloud OCR services in order of preference
+        # 1. Google Vision API (most accurate for handwriting)
+        cloud_result = extract_text_with_google_vision(image_path)
+        
+        # 2. If Google Vision fails, try Azure
+        if not cloud_result:
+            cloud_result = extract_text_with_azure_vision(image_path)
+        
+        # 3. If both fail, try OCR.Space (free option)
+        if not cloud_result:
+            from config_ocr import extract_text_with_ocr_space
+            cloud_result = extract_text_with_ocr_space(image_path)
+        
+        # If cloud APIs succeeded and returned substantial text, use that result
+        if cloud_result and len(cloud_result.strip()) > 50:
+            logger.info("Using cloud-based OCR result for better accuracy")
+            
+            # Still create visualization for user feedback
+            try:
+                processed_image, visualization_img, text_regions = preprocess_image(image, is_handwritten=True)
+                base_filename = os.path.basename(image_path)
+                viz_filename = f"viz_{base_filename.split('.')[0]}.jpg"
+                viz_path = os.path.join(viz_dir, viz_filename)
+                visualization_img.save(viz_path)
+                
+                visualization_url = f"/static/visualizations/{viz_filename}"
+                final_result = f"[Cloud OCR - Enhanced Handwriting Recognition. View regions <a href='{visualization_url}' target='_blank'>here</a>]\n\n"
+                final_result += cloud_result
+                
+                return final_result
+            except Exception as viz_err:
+                logger.warning(f"Visualization creation failed: {viz_err}")
+                return cloud_result
+        
+        # Fallback to local processing with enhanced settings
+        logger.info("Cloud OCR not available or insufficient, using enhanced local OCR")
+        
         # Process with Google Lens-like region detection
         try:
             # Process with autodetection - returns processed image, visualization, and text regions
