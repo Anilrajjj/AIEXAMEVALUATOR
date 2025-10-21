@@ -353,12 +353,8 @@ def extract_text_from_image(image_path):
         
         # 3. If both fail, try OCR.Space (free option)
         if not cloud_result:
-            try:
-                from config_ocr import extract_text_with_ocr_space
-                cloud_result = extract_text_with_ocr_space(image_path)
-            except ImportError:
-                logger.warning("config_ocr module not available for OCR.Space integration")
-                cloud_result = None
+            from config_ocr import extract_text_with_ocr_space
+            cloud_result = extract_text_with_ocr_space(image_path)
         
         # If cloud APIs succeeded and returned substantial text, use that result
         if cloud_result and len(cloud_result.strip()) > 50:
@@ -702,12 +698,9 @@ def extract_text_from_pdf(pdf_path):
                         full_text += f"\n--- Page {page_num} ---\n[OCR processing error]\n"
                     finally:
                         # Free memory immediately
-                        if 'processed_page' in locals():
-                            del processed_page
-                        if 'img' in locals():
-                            del img
-                        if 'page' in locals():
-                            del page
+                        del processed_page
+                        del img
+                        del page
                 else:
                     logger.warning(f"No image returned for page {page_num}")
             except Exception as page_error:
@@ -946,11 +939,7 @@ def process_file(file_path, is_handwritten=True):
                     new_width = int(width * (new_height / height))
 
                 # Create a temporary resized image
-                try:
-                    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                except AttributeError:
-                    # Fallback for older Pillow versions
-                    img = img.resize((new_width, new_height), Image.ANTIALIAS)
+                img = img.resize((new_width, new_height), Image.LANCZOS)
                 temp_path = f"{file_path}_resized.jpg"
                 img.save(temp_path)
 
