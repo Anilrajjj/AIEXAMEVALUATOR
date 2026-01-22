@@ -1,6 +1,6 @@
 import os
 import logging
-from flask import Flask
+from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase
 from flask_login import LoginManager
@@ -19,10 +19,18 @@ app.jinja_env.lstrip_blocks = True
 
 # Configure SQLite database
 db_path = os.path.join(os.getcwd(), 'instance', 'app.db')
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}?timeout=30"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_pre_ping": True,
+    "pool_recycle": 300,
+    "pool_timeout": 30,
+    "max_overflow": 10,
+    "pool_size": 5,
+    "connect_args": {
+        "timeout": 30,
+        "check_same_thread": False
+    }
 }
 
 # Ensure instance directory exists with proper permissions
@@ -68,4 +76,19 @@ with app.app_context():
 @login_manager.user_loader
 def load_user(user_id):
     from models import User
-    return User.query.get(int(user_id))
+    try:
+        # Try to convert to int (SQLite integer ID)
+        return User.query.get(int(user_id))
+    except (ValueError, TypeError):
+        # If conversion fails (e.g., MongoDB ObjectId string), return None
+        return None
+
+# Add database cleanup on app teardown
+@app.teardown_appcontext
+def close_db(error):
+    """Close database connections properly"""
+    try:
+        if hasattr(db, 'session'):
+            db.session.remove()
+    except Exception as e:
+        logging.warning(f"Error closing database session: {e}")

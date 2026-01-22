@@ -1,0 +1,41 @@
+# Core Flask Dependencies
+Flask==3.1.0
+Flask-Login==0.6.3
+Flask-SQLAlchemy==3.1.1
+Flask-WTF==1.2.2
+WTForms==3.2.1
+email-validator==2.2.0
+Werkzeug==3.1.3
+SQLAlchemy==2.0.40
+gunicorn==23.0.0
+psycopg2-binary==2.9.10
+
+# OCR and Image Processing
+pytesseract==0.3.13
+Pillow==11.1.0
+pdf2image==1.17.0
+opencv-python-headless==4.11.0.86
+pdfminer-six==20250327
+PyMuPDF==1.25.5
+
+# NLP and Machine Learning
+nltk==3.9.1
+scikit-learn==1.6.1
+torch>=2.0.0
+transformers>=4.30.0
+
+# Additional Dependencies
+trafilatura==2.0.0
+requests==2.32.4
+
+# Optional: For advanced grammar and spelling checking
+# Uncomment these for production use with better accuracy
+# language-tool-python>=2.7.1  # Advanced grammar checking
+# pyspellchecker>=0.7.2         # Better spelling correction
+# textblob>=0.17.1              # Alternative NLP toolkit
+
+# Optional: For future advanced AI grading integration
+# openai>=1.70.0
+# anthropic>=0.49.0
+# google-generativeai>=0.3.0
+

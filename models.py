@@ -36,8 +36,8 @@ class Question(db.Model):
     text = db.Column(db.Text, nullable=False)
     answer_key = db.Column(db.Text, nullable=False)
     max_score = db.Column(db.Float, default=1.0)
+    min_word_count = db.Column(db.Integer, default=50)
     question_type = db.Column(db.String(20), default='text')  # text, mcq, etc.
-    keywords = db.Column(db.Text)  # Comma-separated keywords for evaluation
     order = db.Column(db.Integer, default=0)
 
 
@@ -48,6 +48,7 @@ class Submission(db.Model):
     student_id = db.Column(db.String(64), nullable=False)
     submitted_at = db.Column(db.DateTime, default=datetime.utcnow)
     original_file = db.Column(db.String(255))  # Path to uploaded file
+    extracted_text = db.Column(db.Text)  # Raw extracted text from OCR (stored in DB, not session)
     total_score = db.Column(db.Float, default=0)
     answers = db.relationship('SubmissionAnswer', backref='submission', lazy=True, cascade="all, delete-orphan")
 

@@ -24,7 +24,7 @@ class ExamForm(FlaskForm):
 class QuestionForm(FlaskForm):
     text = TextAreaField('Question', validators=[DataRequired()])
     answer_key = TextAreaField('Answer Key', validators=[DataRequired()])
-    keywords = TextAreaField('Keywords (comma separated)', validators=[Optional()])
+    min_word_count = IntegerField('Minimum Word Count', validators=[DataRequired()], default=50)
     max_score = FloatField('Maximum Score', validators=[DataRequired()], default=1.0)
     question_type = SelectField('Question Type', choices=[
         ('text', 'Text Answer'),
@@ -40,8 +40,6 @@ class SubmissionForm(FlaskForm):
         FileRequired(),
         FileAllowed(['pdf', 'jpg', 'jpeg', 'png'], 'Only PDF and image files are allowed!')
     ])
-    is_handwritten = BooleanField('This is a handwritten answer paper', default=True)
-    use_manual_entry = BooleanField('Use manual text entry (in case OCR fails)', default=False)
 
 class ManualAnswerForm(FlaskForm):
     answer_text = TextAreaField('Student Answer Text', validators=[DataRequired()])

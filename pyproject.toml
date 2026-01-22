@@ -26,5 +26,6 @@ dependencies = [
     "pymupdf>=1.25.5",
     "anthropic>=0.49.0",
     "requests>=2.32.4",
-    "google-cloud-vision>=3.10.2",
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
 ]

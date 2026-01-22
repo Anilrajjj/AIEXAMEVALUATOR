@@ -156,9 +156,9 @@
                 </div>
                 
                 <div class="mb-3">
-                  <label for="keywords" class="form-label">Keywords (comma separated)</label>
-                  {{ question_form.keywords(class="form-control", id="keywords", placeholder="Enter keywords that should appear in correct answers") }}
-                  <small class="form-text text-muted">These keywords will be used for evaluation.</small>
+                  <label for="min_word_count" class="form-label">Minimum Word Count</label>
+                  {{ question_form.min_word_count(class="form-control", id="min_word_count", placeholder="Enter minimum word count required") }}
+                  <small class="form-text text-muted">Minimum number of words required for a complete answer.</small>
                 </div>
                 
                 <div class="mb-3">
@@ -224,9 +224,9 @@
                 </div>
                 
                 <div class="mb-3">
-                  <label for="keywords" class="form-label">Keywords (comma separated)</label>
-                  {{ question_form.keywords(class="form-control", id="keywords", placeholder="Enter keywords that should appear in correct answers") }}
-                  <small class="form-text text-muted">These keywords will be used for evaluation.</small>
+                  <label for="min_word_count" class="form-label">Minimum Word Count</label>
+                  {{ question_form.min_word_count(class="form-control", id="min_word_count", placeholder="Enter minimum word count required") }}
+                  <small class="form-text text-muted">Minimum number of words required for a complete answer.</small>
                 </div>
                 
                 <div class="mb-3">
@@ -336,7 +336,7 @@
           <li class="mb-2">Create the exam by entering a title and optional description.</li>
           <li class="mb-2">Add questions to the exam, including the question text and answer key.</li>
           <li class="mb-2">For each question, specify the maximum score and question type.</li>
-          <li class="mb-2">Add keywords that should appear in a correct answer for better evaluation.</li>
+          <li class="mb-2">Set minimum word count requirements for complete answers.</li>
           <li class="mb-2">Once you've added all questions, you can upload student answer papers for evaluation.</li>
         </ol>
       </div>

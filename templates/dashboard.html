@@ -11,64 +11,6 @@
     </a>
   </div>
   
-  <div class="row mb-4">
-    <div class="col-md-3">
-      <div class="card stat-card bg-primary bg-opacity-25">
-        <div class="card-body">
-          <div class="stat-value">{{ exams|length }}</div>
-          <div class="stat-label">Total Exams</div>
-        </div>
-      </div>
-    </div>
-    
-    {% if exams|length > 0 %}
-    {% set total_submissions = 0 %}
-    {% for exam in exams %}
-      {% set total_submissions = total_submissions + exam.submissions|length %}
-    {% endfor %}
-    
-    <div class="col-md-3">
-      <div class="card stat-card bg-success bg-opacity-25">
-        <div class="card-body">
-          <div class="stat-value">{{ total_submissions }}</div>
-          <div class="stat-label">Total Submissions</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="col-md-3">
-      <div class="card stat-card bg-info bg-opacity-25">
-        <div class="card-body">
-          <div class="stat-value">
-            {% if exams %}
-              {{ ((total_submissions / exams|length) or 0)|round(1) }}
-            {% else %}
-              0
-            {% endif %}
-          </div>
-          <div class="stat-label">Avg. Submissions per Exam</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="col-md-3">
-      <div class="card stat-card bg-warning bg-opacity-25">
-        <div class="card-body">
-          <div class="stat-value">
-            {% if exams %}
-              {% set recent_exam = exams|sort(attribute='created_at', reverse=True)|first %}
-              {{ recent_exam.created_at.strftime('%d %b') }}
-            {% else %}
-              -
-            {% endif %}
-          </div>
-          <div class="stat-label">Latest Exam</div>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-  </div>
-  
   <!-- Exams List -->
   <div class="card shadow-sm">
     <div class="card-header bg-dark">

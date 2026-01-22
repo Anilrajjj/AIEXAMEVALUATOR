@@ -23,19 +23,19 @@
                 </tr>
                 <tr>
                   <th>Average Score</th>
-                  <td>{{ stats.average|round(2) }} / {{ stats.max_possible }}</td>
+                  <td>{{ stats.mean|round(2) if stats.mean is not none else 0 }} / {{ max_score }}</td>
                 </tr>
                 <tr>
                   <th>Highest Score</th>
-                  <td>{{ stats.highest|round(2) }}</td>
+                  <td>{{ stats.max|round(2) if stats.max is not none else 0 }}</td>
                 </tr>
                 <tr>
                   <th>Lowest Score</th>
-                  <td>{{ stats.lowest|round(2) }}</td>
+                  <td>{{ stats.min|round(2) if stats.min is not none else 0 }}</td>
                 </tr>
                 <tr>
                   <th>Standard Deviation</th>
-                  <td>{{ stats.std_dev|round(2) }}</td>
+                  <td>{{ stats.std_dev|round(2) if stats.std_dev is not none else 0 }}</td>
                 </tr>
               </tbody>
             </table>
@@ -91,7 +91,8 @@
         <div class="card-body">
           <div class="accordion" id="errorAnalysisAccordion">
             {% for question_id, data in error_analysis.items() %}
-              {% set question = question_data[question_id|int] %}
+              {% set question = exam.questions|selectattr('id', 'equalto', question_id|int)|first %}
+              {% if question %}
               <div class="accordion-item">
                 <h2 class="accordion-header" id="heading{{ loop.index }}">
                   <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
@@ -120,7 +121,7 @@
                             <tr>
                               <td>{{ keyword }}</td>
                               <td>{{ count }} / {{ submissions|length }}</td>
-                              <td>{{ (count / submissions|length * 100)|round(1) }}%</td>
+                              <td>{{ (count / submissions|length * 100)|round(1) if submissions|length > 0 else 0 }}%</td>
                             </tr>
                           {% else %}
                             <tr>
@@ -133,6 +134,7 @@
                   </div>
                 </div>
               </div>
+              {% endif %}
             {% endfor %}
           </div>
         </div>
@@ -147,7 +149,7 @@
   
   <div class="row mt-4 mb-4">
     <div class="col-12">
-      <a href="{{ url_for('view_submissions', exam_id=exam.id) }}" class="btn btn-secondary">
+      <a href="{{ url_for('exam.view_submissions', exam_id=exam.id) }}" class="btn btn-secondary">
         <i class="bi bi-arrow-left"></i> Back to Submissions
       </a>
     </div>
@@ -174,18 +176,16 @@
       // Exam overview
       csvContent += 'EXAM OVERVIEW\n';
       csvContent += 'Total Submissions,{{ submissions|length }}\n';
-      csvContent += 'Average Score,{{ stats.average|round(2) }}\n';
-      csvContent += 'Highest Score,{{ stats.highest|round(2) }}\n';
-      csvContent += 'Lowest Score,{{ stats.lowest|round(2) }}\n';
-      csvContent += 'Standard Deviation,{{ stats.std_dev|round(2) }}\n\n';
+      csvContent += 'Average Score,{{ stats.mean|round(2) if stats.mean is not none else 0 }}\n';
+      csvContent += 'Highest Score,{{ stats.max|round(2) if stats.max is not none else 0 }}\n';
+      csvContent += 'Lowest Score,{{ stats.min|round(2) if stats.min is not none else 0 }}\n';
+      csvContent += 'Standard Deviation,{{ stats.std_dev|round(2) if stats.std_dev is not none else 0 }}\n\n';
       
       // Question performance
       csvContent += 'QUESTION PERFORMANCE\n';
       csvContent += 'Question,Average Score,Max Score,Performance (%)\n';
-      {% for question in exam.questions %}
-        {% if question_performance[question.id] is defined %}
-          csvContent += '{{ loop.index }},{{ question_performance[question.id].avg_score|round(2) }},{{ question.max_score }},{{ (question_performance[question.id].avg_score / question.max_score * 100)|round(1) }}%\n';
-        {% endif %}
+      {% for question_avg in question_avgs %}
+        csvContent += '{{ loop.index }},{{ question_avg.avg_score|round(2) }},{{ question_avg.question.max_score }},{{ question_avg.percentage|round(1) }}%\n';
       {% endfor %}
       
       // Common errors
@@ -195,7 +195,7 @@
       {% for question_id, data in error_analysis.items() %}
         {% set q_index = loop.index %}
         {% for keyword, count in data.missing_keywords.items() %}
-          {% set percentage = (count / submissions|length * 100)|round(1) %}
+          {% set percentage = (count / submissions|length * 100)|round(1) if submissions|length > 0 else 0 %}
           try {
             csvContent += 'Q{{ q_index }},"{{ keyword }}",{{ count }},{{ percentage }}%\n';
           } catch(e) {

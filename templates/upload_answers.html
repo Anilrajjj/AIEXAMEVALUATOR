@@ -89,27 +89,7 @@
                   {% endfor %}
                 </div>
               {% endif %}
-              <small class="form-text text-muted">Upload a PDF or image file of the student's answer paper.</small>
-            </div>
-            
-            <div class="mb-3 form-check">
-              {{ form.is_handwritten(class="form-check-input", id="is_handwritten") }}
-              <label class="form-check-label" for="is_handwritten">
-                {{ form.is_handwritten.label.text }}
-              </label>
-              <div class="form-text">
-                Check this option if the answer paper contains handwritten text for enhanced recognition.
-              </div>
-            </div>
-            
-            <div class="mb-3 form-check">
-              {{ form.use_manual_entry(class="form-check-input", id="use_manual_entry") }}
-              <label class="form-check-label" for="use_manual_entry">
-                {{ form.use_manual_entry.label.text }}
-              </label>
-              <div class="form-text">
-                Check this option if OCR fails to extract text properly and you want to manually enter the answer text later.
-              </div>
+              <small class="form-text text-muted">Upload a PDF or image file of the student's answer paper. The system will automatically detect and process handwritten or printed text.</small>
             </div>
             
             <div class="preview-container mt-3 border rounded p-2" id="pdf-preview-container">
@@ -129,14 +109,14 @@
         </div>
         <div class="card-footer">
           <div class="alert alert-info mb-0">
-            <h6 class="alert-heading">Processing Information</h6>
+            <h6 class="alert-heading">Automatic Processing</h6>
             <p class="small">
-              The system will perform OCR on the uploaded file, extract text, and evaluate the answers based on the answer keys provided. 
+              The system will automatically detect handwritten or printed text, perform OCR extraction, and evaluate the answers based on the answer keys provided. 
               This process may take a few moments depending on the file size and complexity.
             </p>
             <p class="mb-0 small">
-              <i class="fas fa-lightbulb me-1"></i><strong>New Feature:</strong> 
-              Enhanced multi-page PDF support is now available! You can view all pages of a PDF before uploading.
+              <i class="fas fa-lightbulb me-1"></i><strong>Smart Detection:</strong> 
+              The system automatically tries multiple OCR methods for optimal text extraction from both handwritten and printed content.
             </p>
           </div>
         </div>

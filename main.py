@@ -5,4 +5,5 @@ from app import app
 logging.basicConfig(level=logging.DEBUG)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # Use debug=False so the process (and loaded models) are not reloaded automatically.
+    app.run(host="0.0.0.0", port=5000, debug=False)

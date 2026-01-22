@@ -5,6 +5,38 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  color: #fff;
+  background-color: #050b1f;
+}
+
+body,
+body * {
+  color: #fff !important;
+}
+
+/* Alert visibility */
+.alert {
+  background-color: rgba(15, 23, 42, 0.92) !important;
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-left: 4px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+}
+
+.alert-success {
+  border-left-color: #22c55e !important;
+}
+
+.alert-danger {
+  border-left-color: #ef4444 !important;
+}
+
+.alert-warning {
+  border-left-color: #f97316 !important;
+}
+
+.alert-info {
+  border-left-color: #38bdf8 !important;
 }
 
 main {

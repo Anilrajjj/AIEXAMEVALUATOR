@@ -40,6 +40,110 @@
     </div>
   </div>
 
+  {% if report_data %}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="card-title mb-0">Detailed Evaluation Report</h5>
+      <a href="{{ url_for('exam.download_submission_report', exam_id=exam.id, submission_id=submission.id, export_format='json') }}" class="btn btn-sm btn-outline-info">
+        <i class="fas fa-download me-1"></i>Download JSON
+      </a>
+    </div>
+    <div class="card-body">
+      <div class="row row-cols-1 row-cols-md-4 g-3 mb-4">
+        <div class="col">
+          <div class="report-stat">
+            <p class="label">Student</p>
+            <h4 class="value">{{ report_data.student_info.name }}</h4>
+            <small>{{ report_data.student_info.roll_number }}</small>
+          </div>
+        </div>
+        <div class="col">
+          <div class="report-stat">
+            <p class="label">Subject</p>
+            <h4 class="value">{{ report_data.student_info.subject }}</h4>
+            <small>Total Marks: {{ report_data.student_info.total_marks }}</small>
+          </div>
+        </div>
+        <div class="col">
+          <div class="report-stat">
+            <p class="label">Score</p>
+            <h4 class="value">{{ report_data.overall_result.total_score }}/{{ max_score|int }}</h4>
+            <small>{{ report_data.overall_result.percentage }}%</small>
+          </div>
+        </div>
+        <div class="col">
+          <div class="report-stat">
+            <p class="label">Status</p>
+            <h4 class="value">{{ report_data.overall_result.status }}</h4>
+          </div>
+        </div>
+      </div>
+
+      <h6 class="mb-2">Question-wise Details</h6>
+      <div class="table-responsive mb-4">
+        <table class="table table-dark table-sm align-middle">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Question</th>
+              <th>Max Marks</th>
+              <th>Similarity</th>
+              <th>Grammar</th>
+              <th>Spelling</th>
+              <th>Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for detail in report_data.question_details %}
+            <tr>
+              <td>{{ detail.question_number }}</td>
+              <td>{{ detail.question_text }}</td>
+              <td>{{ detail.max_marks }}</td>
+              <td>{{ detail.similarity }}</td>
+              <td>{{ detail.grammar }}</td>
+              <td>{{ detail.spelling }}</td>
+              <td>{{ detail.final_score }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="row">
+        <div class="col-lg-6">
+          <h6>Section Summary</h6>
+          <div class="table-responsive mb-4">
+            <table class="table table-dark table-sm">
+              <thead>
+                <tr>
+                  <th>Section</th>
+                  <th>Total Marks</th>
+                  <th>Obtained</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for section in report_data.section_summary %}
+                <tr>
+                  <td>{{ section.section }}</td>
+                  <td>{{ section.total_marks }}</td>
+                  <td>{{ section.obtained }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-3">
+        <h6>Feedback Summary</h6>
+        <p class="mb-1">{{ report_data.feedback_summary }}</p>
+        <small class="text-muted">Generated on {{ report_data.metadata.generated_at }} by {{ report_data.metadata.evaluator }}</small>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Evaluation details for each question -->
   {% for answer in answers %}
     <div class="card shadow-sm mb-4">
@@ -126,12 +230,6 @@
               <p class="small text-muted">Similarity Score: {{ answer.similarity_score|round(2) }}</p>
             </div>
 
-            {% if answer.feedback %}
-              <div class="answer-feedback">
-                <h6>Feedback:</h6>
-                <p class="mb-0">{{ answer.feedback }}</p>
-              </div>
-            {% endif %}
           </div>
         </div>
       </div>
@@ -164,6 +262,23 @@
     // Add CSS styles for better formatting
     const style = document.createElement('style');
     style.textContent = `
+      .report-stat {
+        padding: 1rem;
+        border-radius: 12px;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.08);
+      }
+      .report-stat .label {
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        color: rgba(255,255,255,0.7);
+        margin-bottom: 0.3rem;
+      }
+      .report-stat .value {
+        margin: 0;
+        font-size: 1.6rem;
+      }
       .formatted-answer {
         font-family: 'Roboto Mono', monospace;
         white-space: pre-wrap;

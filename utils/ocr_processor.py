@@ -10,12 +10,34 @@ import cv2
 import numpy as np
 import fitz  # PyMuPDF
 import base64
-import requests
-from google.cloud import vision
 import json
+import os
 
 # Setup logging
 logger = logging.getLogger(__name__)
+
+# Import TrOCR processor
+try:
+    from .trocr_processor import extract_text_with_trocr_pipeline
+    TROCR_AVAILABLE = True
+    logger.info("TrOCR processor available")
+except ImportError as e:
+    logger.warning(f"TrOCR processor not available: {e}")
+    TROCR_AVAILABLE = False
+except Exception as e:
+    logger.warning(f"TrOCR processor error: {e}")
+    TROCR_AVAILABLE = False
+
+# Quality thresholds for OCR acceptance
+TROCR_MIN_CHARS = 100
+
+# Optional Gemini extraction wrapper
+try:
+    from .gemini_processor import extract_text_with_gemini  # type: ignore
+    GEMINI_AVAILABLE = True
+except Exception:
+    extract_text_with_gemini = None
+    GEMINI_AVAILABLE = False
 
 def preprocess_image(image, is_handwritten=False):
     """
@@ -173,144 +195,14 @@ def preprocess_image(image, is_handwritten=False):
                 blank = Image.new('RGB', (100, 100), color='white')
                 return blank, blank, []
 
-def extract_text_with_google_vision(image_path):
-    """
-    Extract text using Google Vision API for better handwritten text recognition
-    """
-    try:
-        # Check if Google Vision client can be initialized
-        try:
-            client = vision.ImageAnnotatorClient()
-            logger.info("Using Google Vision API for OCR")
-        except Exception as vision_error:
-            logger.warning(f"Google Vision API not available: {vision_error}")
-            return None
-
-        # Read the image file
-        with open(image_path, 'rb') as image_file:
-            content = image_file.read()
-
-        # Create Vision API image object
-        image = vision.Image(content=content)
-
-        # Detect text in the image using document text detection (better for handwriting)
-        response = client.document_text_detection(image=image)
-        
-        if response.error.message:
-            logger.error(f'Google Vision API error: {response.error.message}')
-            return None
-
-        # Extract full text
-        full_text = response.full_text_annotation.text if response.full_text_annotation else ""
-        
-        # Also get detailed text annotations for better structure
-        texts = response.text_annotations
-        detailed_text = ""
-        
-        if texts:
-            # First annotation contains the full detected text
-            detailed_text = texts[0].description
-            
-        # Use the more complete result
-        result_text = detailed_text if len(detailed_text) > len(full_text) else full_text
-        
-        if result_text:
-            logger.info(f"Google Vision API extracted {len(result_text)} characters")
-            return f"[Google Vision API - Handwriting Optimized]\n{result_text}"
-        else:
-            logger.warning("Google Vision API returned empty result")
-            return None
-            
-    except Exception as e:
-        logger.error(f"Google Vision API error: {e}")
-        return None
-
-def extract_text_with_azure_vision(image_path):
-    """
-    Extract text using Azure Computer Vision API for handwritten text
-    """
-    try:
-        # Azure Computer Vision endpoint and key (should be set as environment variables)
-        endpoint = os.getenv('AZURE_VISION_ENDPOINT')
-        key = os.getenv('AZURE_VISION_KEY')
-        
-        if not endpoint or not key:
-            logger.warning("Azure Vision API credentials not found")
-            return None
-            
-        logger.info("Using Azure Computer Vision API for OCR")
-        
-        # Prepare the image
-        with open(image_path, 'rb') as image_file:
-            image_data = image_file.read()
-        
-        # Azure OCR endpoint
-        ocr_url = f"{endpoint}/vision/v3.2/read/analyze"
-        
-        headers = {
-            'Ocp-Apim-Subscription-Key': key,
-            'Content-Type': 'application/octet-stream'
-        }
-        
-        # Submit image for analysis
-        response = requests.post(ocr_url, headers=headers, data=image_data)
-        
-        if response.status_code != 202:
-            logger.error(f"Azure Vision API request failed: {response.status_code}")
-            return None
-        
-        # Get operation location from response headers
-        operation_location = response.headers.get('Operation-Location')
-        if not operation_location:
-            logger.error("No operation location in Azure response")
-            return None
-        
-        # Poll for results
-        import time
-        max_attempts = 30
-        attempt = 0
-        
-        while attempt < max_attempts:
-            time.sleep(2)  # Wait 2 seconds between polls
-            
-            result_response = requests.get(operation_location, headers={'Ocp-Apim-Subscription-Key': key})
-            
-            if result_response.status_code == 200:
-                result = result_response.json()
-                
-                if result['status'] == 'succeeded':
-                    # Extract text from results
-                    extracted_text = ""
-                    
-                    if 'analyzeResult' in result and 'readResults' in result['analyzeResult']:
-                        for page in result['analyzeResult']['readResults']:
-                            for line in page.get('lines', []):
-                                extracted_text += line['text'] + '\n'
-                    
-                    if extracted_text:
-                        logger.info(f"Azure Vision API extracted {len(extracted_text)} characters")
-                        return f"[Azure Computer Vision - Handwriting Optimized]\n{extracted_text}"
-                    else:
-                        logger.warning("Azure Vision API returned empty result")
-                        return None
-                        
-                elif result['status'] == 'failed':
-                    logger.error("Azure Vision API analysis failed")
-                    return None
-                    
-            attempt += 1
-        
-        logger.error("Azure Vision API polling timeout")
-        return None
-        
-    except Exception as e:
-        logger.error(f"Azure Vision API error: {e}")
-        return None
-
-def extract_text_from_image(image_path):
+def extract_text_from_image(image_path, is_handwritten=True):
     """
     Extract text from an image file using PyTesseract OCR with Google Lens-like 
     region detection for better results
+    
+    Args:
+        image_path: Path to the image file
+        is_handwritten: Boolean indicating if the image contains handwritten text
     """
     try:
         logger.info(f"Extracting text from image: {image_path}")
@@ -340,45 +232,38 @@ def extract_text_from_image(image_path):
             logger.error(f"Error loading or resizing image: {img_err}")
             return f"[Error loading image: {str(img_err)}]"
 
-        # First try cloud-based OCR APIs for better handwritten text recognition
-        cloud_result = None
-        
-        # Try multiple cloud OCR services in order of preference
-        # 1. Google Vision API (most accurate for handwriting)
-        cloud_result = extract_text_with_google_vision(image_path)
-        
-        # 2. If Google Vision fails, try Azure
-        if not cloud_result:
-            cloud_result = extract_text_with_azure_vision(image_path)
-        
-        # 3. If both fail, try OCR.Space (free option)
-        if not cloud_result:
-            from config_ocr import extract_text_with_ocr_space
-            cloud_result = extract_text_with_ocr_space(image_path)
-        
-        # If cloud APIs succeeded and returned substantial text, use that result
-        if cloud_result and len(cloud_result.strip()) > 50:
-            logger.info("Using cloud-based OCR result for better accuracy")
-            
-            # Still create visualization for user feedback
+        # For handwritten content, try TrOCR first if available
+        if is_handwritten and TROCR_AVAILABLE:
             try:
-                processed_image, visualization_img, text_regions = preprocess_image(image, is_handwritten=True)
-                base_filename = os.path.basename(image_path)
-                viz_filename = f"viz_{base_filename.split('.')[0]}.jpg"
-                viz_path = os.path.join(viz_dir, viz_filename)
-                visualization_img.save(viz_path)
+                logger.info("Attempting TrOCR deep learning pipeline for handwritten image")
+                trocr_text = extract_text_with_trocr_pipeline(image_path, is_handwritten=True)
                 
-                visualization_url = f"/static/visualizations/{viz_filename}"
-                final_result = f"[Cloud OCR - Enhanced Handwriting Recognition. View regions <a href='{visualization_url}' target='_blank'>here</a>]\n\n"
-                final_result += cloud_result
-                
-                return final_result
-            except Exception as viz_err:
-                logger.warning(f"Visualization creation failed: {viz_err}")
-                return cloud_result
+                if trocr_text and len(trocr_text.strip()) > 50:
+                    logger.info("Successfully extracted text using TrOCR pipeline")
+                    # Still create visualization for user feedback
+                    try:
+                        processed_image, visualization_img, text_regions = preprocess_image(image, is_handwritten=True)
+                        base_filename = os.path.basename(image_path)
+                        viz_filename = f"viz_{base_filename.split('.')[0]}.jpg"
+                        viz_path = os.path.join(viz_dir, viz_filename)
+                        visualization_img.save(viz_path)
+                        
+                        visualization_url = f"/static/visualizations/{viz_filename}"
+                        final_result = f"[TrOCR Deep Learning Pipeline. View regions <a href='{visualization_url}' target='_blank'>here</a>]\n\n"
+                        final_result += trocr_text
+                        
+                        return final_result
+                    except Exception as viz_err:
+                        logger.warning(f"Visualization creation failed: {viz_err}")
+                        return trocr_text
+                else:
+                    logger.info("TrOCR pipeline produced limited text, falling back to traditional OCR")
+            except Exception as trocr_err:
+                logger.error(f"TrOCR pipeline error: {trocr_err}")
+                logger.info("Falling back to traditional OCR")
         
         # Fallback to local processing with enhanced settings
-        logger.info("Cloud OCR not available or insufficient, using enhanced local OCR")
+        logger.info("Using enhanced local OCR")
         
         # Process with Google Lens-like region detection
         try:
@@ -582,11 +467,11 @@ def extract_text_from_pdf(pdf_path):
                     pdf_path, 
                     first_page=page_num, 
                     last_page=page_num,
-                    dpi=100,  # Even lower DPI to save memory
+                    dpi=200,  # Increase DPI for better OCR accuracy on handwriting
                     thread_count=1,  # Single thread
                     use_cropbox=True,
                     grayscale=True,  # Use grayscale to reduce memory
-                    size=(800, None)  # Resize to lower resolution
+                    size=None  # keep native size to preserve detail
                 )
 
                 if page and len(page) > 0:
@@ -726,21 +611,50 @@ def extract_text_from_pdf(pdf_path):
 
 def process_file(file_path, is_handwritten=True):
     """
-    Process an uploaded file (PDF or image) to extract text
-
+    Process an uploaded file (PDF or image) to extract text using Gemini API
+    
     Args:
         file_path: Path to the file to process
         is_handwritten: Boolean indicating if the document contains handwritten text
                       Default is True to enable handwritten text optimizations
-
+    
     Returns:
         Extracted text from the file
     """
     file_ext = os.path.splitext(file_path)[1].lower()
 
     # Log the processing attempt
-    logger.info(f"Processing file: {file_path} (Handwritten: {is_handwritten})")
+    logger.info(f"Processing file: {file_path}")
 
+    # Prefer local TrOCR for handwritten content (privacy + accuracy)
+    if is_handwritten and TROCR_AVAILABLE:
+        try:
+            logger.info("Attempting TrOCR deep learning pipeline for handwritten content (preferred)")
+            trocr_text = extract_text_with_trocr_pipeline(file_path, is_handwritten=True)
+            if trocr_text and len(trocr_text.strip()) >= TROCR_MIN_CHARS:
+                logger.info("Successfully extracted text using TrOCR pipeline")
+                return trocr_text
+            else:
+                logger.info("TrOCR produced limited text; will try Gemini or traditional OCR as fallback")
+                # Attempt Gemini extraction as a network-backed fallback when configured
+                try:
+                    if GEMINI_AVAILABLE and os.environ.get('GEMINI_API_KEY'):
+                        logger.info("Attempting Gemini extraction as a fallback (GEMINI_API_KEY present)")
+                        gemini_text = extract_text_with_gemini(file_path, is_handwritten=is_handwritten)
+                        if gemini_text and len(gemini_text.strip()) >= TROCR_MIN_CHARS:
+                            logger.info("Successfully extracted text using Gemini API")
+                            return gemini_text
+                        else:
+                            logger.info("Gemini extraction returned insufficient text; continuing with local OCR")
+                except Exception as gem_err:
+                    logger.warning(f"Gemini extraction failed: {gem_err}")
+        except Exception as trocr_err:
+            logger.error(f"TrOCR pipeline error: {trocr_err}")
+            logger.info("Falling back to traditional OCR")
+    
+    # Fallback to traditional OCR methods
+    logger.info("Using traditional OCR methods as fallback")
+    
     # Process PDF files with multiple extraction methods
     if file_ext == '.pdf':
         try:
@@ -783,10 +697,26 @@ def process_file(file_path, is_handwritten=True):
                 # Close the document
                 doc.close()
 
-                # Check if we have meaningful text
+                # Check if we have meaningful text (not binary data)
                 if len(full_text.strip()) > 200:
-                    logger.info("Successfully extracted text using PyMuPDF")
-                    return full_text
+                    # Check if the extracted text is actually binary data
+                    # Binary data typically contains many non-printable characters and patterns
+                    printable_chars = sum(1 for c in full_text if c.isprintable() or c.isspace())
+                    printable_ratio = printable_chars / len(full_text) if len(full_text) > 0 else 0
+                    
+                    # Check for common binary patterns
+                    has_binary_patterns = (
+                        '0000000000' in full_text or  # PDF object patterns
+                        '65535 f' in full_text or     # PDF binary patterns
+                        '00000 n' in full_text or     # PDF reference patterns
+                        printable_ratio < 0.7          # Less than 70% printable characters
+                    )
+                    
+                    if not has_binary_patterns and printable_ratio > 0.8:
+                        logger.info("Successfully extracted text using PyMuPDF")
+                        return full_text
+                    else:
+                        logger.info(f"PyMuPDF extracted binary data (printable ratio: {printable_ratio:.2f}), trying other methods")
 
                 logger.info("PyMuPDF extraction produced limited text, trying other methods")
 
@@ -811,17 +741,32 @@ def process_file(file_path, is_handwritten=True):
                 extracted_text = re.sub(r'\n([A-Za-z])', r'\n    \1', extracted_text)
 
                 if len(extracted_text.strip()) > 200:
-                    logger.info("Successfully extracted text with pdfminer")
+                    # Check if the extracted text is actually binary data
+                    printable_chars = sum(1 for c in extracted_text if c.isprintable() or c.isspace())
+                    printable_ratio = printable_chars / len(extracted_text) if len(extracted_text) > 0 else 0
+                    
+                    # Check for common binary patterns
+                    has_binary_patterns = (
+                        '0000000000' in extracted_text or  # PDF object patterns
+                        '65535 f' in extracted_text or     # PDF binary patterns
+                        '00000 n' in extracted_text or     # PDF reference patterns
+                        printable_ratio < 0.7              # Less than 70% printable characters
+                    )
+                    
+                    if not has_binary_patterns and printable_ratio > 0.8:
+                        logger.info("Successfully extracted text with pdfminer")
 
-                    # Format the text with page breaks for better readability
-                    formatted_text = ""
-                    pages = extracted_text.split("\f")  # Form feed character often separates PDF pages
+                        # Format the text with page breaks for better readability
+                        formatted_text = ""
+                        pages = extracted_text.split("\f")  # Form feed character often separates PDF pages
 
-                    for i, page in enumerate(pages):
-                        if page.strip():
-                            formatted_text += f"\n--- Page {i + 1} ---\n{page.strip()}\n"
+                        for i, page in enumerate(pages):
+                            if page.strip():
+                                formatted_text += f"\n--- Page {i + 1} ---\n{page.strip()}\n"
 
-                    return formatted_text if formatted_text.strip() else extracted_text
+                        return formatted_text if formatted_text.strip() else extracted_text
+                    else:
+                        logger.info(f"pdfminer extracted binary data (printable ratio: {printable_ratio:.2f}), trying other methods")
             except Exception as pdfminer_err:
                 logger.error(f"pdfminer extraction error: {pdfminer_err}")
 
@@ -881,32 +826,67 @@ def process_file(file_path, is_handwritten=True):
 
                     # If we have meaningful content, return it
                     if len(text_content.strip()) > 200:
-                        logger.info("Successfully extracted text using enhanced binary filtering")
+                        # Check if the extracted text is actually binary data
+                        printable_chars = sum(1 for c in text_content if c.isprintable() or c.isspace())
+                        printable_ratio = printable_chars / len(text_content) if len(text_content) > 0 else 0
+                        
+                        # Check for common binary patterns
+                        has_binary_patterns = (
+                            '0000000000' in text_content or  # PDF object patterns
+                            '65535 f' in text_content or     # PDF binary patterns
+                            '00000 n' in text_content or     # PDF reference patterns
+                            printable_ratio < 0.7            # Less than 70% printable characters
+                        )
+                        
+                        if not has_binary_patterns and printable_ratio > 0.8:
+                            logger.info("Successfully extracted text using enhanced binary filtering")
 
-                        # Final cleanup - ensure the text is human-readable
-                        # Remove any remaining PDF artifacts that look like binary content
-                        text_content = re.sub(r'[\x80-\xff]{4,}', '', text_content)
-                        text_content = re.sub(r'[^\w\s\n.,;:!?()[\]{}\-"\'/#$%&*+<=>@^_`|~]', '', text_content)
+                            # Final cleanup - ensure the text is human-readable
+                            # Remove any remaining PDF artifacts that look like binary content
+                            text_content = re.sub(r'[\x80-\xff]{4,}', '', text_content)
+                            text_content = re.sub(r'[^\w\s\n.,;:!?()[\]{}\-"\'/#$%&*+<=>@^_`|~]', '', text_content)
 
-                        # Ensure there's a page marker for better display
-                        if not re.search(r'---\s*Page', text_content):
-                            text_content = "--- Page 1 ---\n" + text_content
+                            # Ensure there's a page marker for better display
+                            if not re.search(r'---\s*Page', text_content):
+                                text_content = "--- Page 1 ---\n" + text_content
 
-                        return f"[Extracted content from {os.path.basename(file_path)}]\n{text_content}"
+                            return f"[Extracted content from {os.path.basename(file_path)}]\n{text_content}"
+                        else:
+                            logger.info(f"Binary filtering extracted binary data (printable ratio: {printable_ratio:.2f}), trying TrOCR")
             except Exception as binary_err:
                 logger.error(f"Binary filtering error: {binary_err}")
 
-            # For handwritten content, try OCR as a last resort
+            # For handwritten content, try TrOCR pipeline first, then fallback to traditional OCR
             if is_handwritten:
+                logger.info(f"Handwritten content detected. TROCR_AVAILABLE: {TROCR_AVAILABLE}")
+                # Try TrOCR pipeline first if available
+                if TROCR_AVAILABLE:
+                    try:
+                        logger.info("Attempting TrOCR deep learning pipeline for handwritten content")
+                        trocr_text = extract_text_with_trocr_pipeline(file_path, is_handwritten=True)
+                        logger.info(f"TrOCR result: {trocr_text[:100] if trocr_text else 'None'}...")
+                        
+                        if trocr_text and len(trocr_text.strip()) > 200:
+                            logger.info("Successfully extracted text using TrOCR pipeline")
+                            return trocr_text
+                        else:
+                            logger.info("TrOCR pipeline produced limited text, falling back to traditional OCR")
+                    except Exception as trocr_err:
+                        logger.error(f"TrOCR pipeline error: {trocr_err}")
+                        logger.info("Falling back to traditional OCR")
+                else:
+                    logger.warning("TrOCR not available, skipping TrOCR pipeline")
+                
+                # Fallback to traditional OCR
                 try:
-                    logger.info("Attempting OCR processing for handwritten content")
+                    logger.info("Attempting traditional OCR processing for handwritten content")
                     ocr_text = extract_text_from_pdf(file_path)
 
                     if len(ocr_text.strip()) > 200:
-                        logger.info("Successfully extracted text using OCR")
+                        logger.info("Successfully extracted text using traditional OCR")
                         return ocr_text
                 except Exception as ocr_err:
-                    logger.error(f"OCR processing error: {ocr_err}")
+                    logger.error(f"Traditional OCR processing error: {ocr_err}")
 
             # If all methods fail, return informative message with detected page count
             logger.warning("All extraction methods failed. Returning basic PDF info.")
@@ -921,7 +901,21 @@ def process_file(file_path, is_handwritten=True):
 
     elif file_ext in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif']:
         try:
-            # For single images, use optimized OCR with size check
+            # For handwritten images, try TrOCR pipeline first if available
+            if is_handwritten and TROCR_AVAILABLE:
+                try:
+                    logger.info("Attempting TrOCR deep learning pipeline for handwritten image")
+                    trocr_text = extract_text_with_trocr_pipeline(file_path, is_handwritten=True)
+                    
+                    if trocr_text and len(trocr_text.strip()) > 50:
+                        logger.info("Successfully extracted text using TrOCR pipeline")
+                        return trocr_text
+                    else:
+                        logger.info("TrOCR pipeline produced limited text, falling back to traditional OCR")
+                except Exception as trocr_err:
+                    logger.error(f"TrOCR pipeline error: {trocr_err}")
+                    logger.info("Falling back to traditional OCR")
+
             # Get image dimensions
             from PIL import Image
             img = Image.open(file_path)
@@ -997,6 +991,27 @@ def extract_text_segments(text, num_questions):
 
         logger.debug(f"Cleaned text for segmentation, original length: {len(text)}, cleaned length: {len(cleaned_text)}")
 
+        # Additional OCR normalization to handle common OCR confusions (e.g., l/I -> 1 at line starts,
+        # common misspellings of 'Question' and 'Answer' etc.)
+        def normalize_ocr_text(s: str) -> str:
+            try:
+                s = s.replace('\r', '\n')
+                # Replace common mis-recognized leading characters that look like '1.'
+                s = re.sub(r'(?m)^\s*[lI\|]\s*[\.)]', '1.', s)
+                # Normalize common OCR variants of 'Question'
+                s = re.sub(r'(?i)q[uo0]esti[o0]n', 'Question', s)
+                # Normalize 'Ans' / 'Answer' variants
+                s = re.sub(r'(?mi)^\s*(ans|answer)[:\.\-\s]+', 'Answer ', s)
+                # Normalize multiple dots or malformed numbering like '1  .' -> '1.'
+                s = re.sub(r'(?m)^(\s*\d+)\s+[\.\)]', r'\1.', s)
+                # Collapse multiple spaces/tabs
+                s = re.sub(r'[ \t]+', ' ', s)
+                return s
+            except Exception:
+                return s
+
+        cleaned_text = normalize_ocr_text(cleaned_text)
+
         # Try multiple segmentation strategies
         logger.debug(f"Attempting to segment text into {num_questions} answers")
 
@@ -1056,31 +1071,32 @@ def extract_text_segments(text, num_questions):
 
 def segment_by_question_markers(text, num_questions):
     """Strategy 1: Look for typical question markers"""
+    # Look for typical leading markers (e.g., 'Question', 'Q', 'Answer', or numbered lines)
+    # Find positions of potential markers
     lines = text.split('\n')
+    marker_indices = []
+    for i, line in enumerate(lines):
+        # Check for a leading number followed by ., ) or - e.g. '1.', '2)'
+        if re.match(r"^\s*\d+[\.)\-]", line):
+            marker_indices.append(i)
+            continue
+        # Check for explicit 'Question' or 'Answer' markers
+        if re.search(r"(?i)\b(question|q|answer|ans)\b", line):
+            marker_indices.append(i)
+
+    if not marker_indices:
+        return []
+
     segments = []
-    current_segment = ""
-    current_question = 1
-
-    for line in lines:
-        # Check for question number indicators
-        question_indicators = [
-            f"Q{current_question}", 
-            f"Question {current_question}", 
-            f"{current_question}.", 
-            f"{current_question})",
-            f"#{current_question}"
-        ]
-
-        if any(indicator in line for indicator in question_indicators) and current_segment and current_question <= num_questions:
-            segments.append(current_segment.strip())
-            current_segment = line
-            current_question += 1
+    for idx, start in enumerate(marker_indices):
+        if idx < len(marker_indices) - 1:
+            end = marker_indices[idx + 1]
         else:
-            current_segment += f"\n{line}"
+            end = len(lines)
 
-    # Add the last segment
-    if current_segment.strip():
-        segments.append(current_segment.strip())
+        segment = '\n'.join(lines[start:end]).strip()
+        if segment:
+            segments.append(segment)
 
     return segments
 

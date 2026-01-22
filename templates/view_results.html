@@ -43,106 +43,38 @@
     </div>
   </div>
   
-  <!-- Quick stats -->
-  {% if submissions %}
-    <div class="row mb-4">
-      <div class="col-md-3">
-        <div class="card stat-card bg-primary bg-opacity-25">
-          <div class="card-body">
-            <div class="d-flex align-items-center">
-              <div class="stat-icon bg-primary">
-                <i class="fas fa-users"></i>
-              </div>
-              <div class="ms-3">
-                <h6 class="card-subtitle text-muted">Total Submissions</h6>
-                <h3 class="card-title mb-0">{{ submissions|length }}</h3>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-3">
-        <div class="card stat-card bg-success bg-opacity-25">
-          <div class="card-body">
-            <div class="d-flex align-items-center">
-              <div class="stat-icon bg-success">
-                <i class="fas fa-chart-line"></i>
-              </div>
-              <div class="ms-3">
-                <h6 class="card-subtitle text-muted">Average Score</h6>
-                <h3 class="card-title mb-0">{{ (avg_score|int if avg_score else 0) }}</h3>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-3">
-        <div class="card stat-card bg-info bg-opacity-25">
-          <div class="card-body">
-            <div class="d-flex align-items-center">
-              <div class="stat-icon bg-info">
-                <i class="fas fa-trophy"></i>
-              </div>
-              <div class="ms-3">
-                <h6 class="card-subtitle text-muted">Highest Score</h6>
-                <h3 class="card-title mb-0">{{ (max_student_score|int if max_student_score else 0) }}</h3>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-3">
-        <div class="card stat-card bg-warning bg-opacity-25">
-          <div class="card-body">
-            <div class="d-flex align-items-center">
-              <div class="stat-icon bg-warning">
-                <i class="fas fa-exclamation-triangle"></i>
-              </div>
-              <div class="ms-3">
-                <h6 class="card-subtitle text-muted">Lowest Score</h6>
-                <h3 class="card-title mb-0">{{ (min_student_score|int if min_student_score else 0) }}</h3>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  {% endif %}
-  
   <!-- Results table -->
   <div class="card shadow-sm">
     <div class="card-header d-flex justify-content-between align-items-center">
       <h5 class="card-title mb-0">Submissions</h5>
-      {% if submissions %}
-        <a href="{{ url_for('report.exam_reports', exam_id=exam.id) }}" class="btn btn-sm btn-outline-info">
-          <i class="fas fa-chart-bar me-1"></i>Detailed Reports
-        </a>
-      {% endif %}
     </div>
     <div class="card-body">
       {% if submissions %}
-        <div class="table-responsive">
-          <table class="table table-hover">
+        <div class="table-responsive results-table">
+          <table class="table table-hover text-white">
             <thead>
               <tr>
                 <th>Student</th>
                 <th>ID</th>
                 <th>Submission Date</th>
                 <th class="text-center">Score</th>
+                <th class="text-center">Passing Mark</th>
                 <th class="text-center">Percentage</th>
-                <th class="text-center">Grade</th>
+                <th class="text-center">Status</th>
                 <th class="text-end">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {% for submission in submissions|sort(attribute='total_score', reverse=True) %}
+              {% for row in submission_rows|sort(attribute='submission.total_score', reverse=True) %}
+                {% set submission = row.submission %}
+                {% set pass_status = row.pass_status %}
                 {% set percentage = (submission.total_score / max_score) * 100 %}
-                {% set grade = 'A' if percentage >= 90 else 'B' if percentage >= 80 else 'C' if percentage >= 70 else 'D' if percentage >= 60 else 'F' %}
                 <tr>
                   <td>{{ submission.student_name }}</td>
                   <td>{{ submission.student_id }}</td>
                   <td>{{ submission.submitted_at.strftime('%b %d, %Y %H:%M') }}</td>
                   <td class="text-center">{{ submission.total_score|int }}/{{ max_score|int }}</td>
+                  <td class="text-center">{{ passing_mark }}</td>
                   <td class="text-center">
                     <div class="progress" style="height: 20px;">
                       <div class="progress-bar 
@@ -159,13 +91,8 @@
                     </div>
                   </td>
                   <td class="text-center">
-                    <span class="badge 
-                      {% if grade == 'A' %}bg-success
-                      {% elif grade == 'B' %}bg-info
-                      {% elif grade == 'C' %}bg-warning
-                      {% elif grade == 'D' %}bg-warning bg-opacity-50
-                      {% else %}bg-danger{% endif %}">
-                      {{ grade }}
+                    <span class="badge {% if pass_status == 'Pass' %}bg-success{% else %}bg-danger{% endif %}">
+                      {{ pass_status }}
                     </span>
                   </td>
                   <td class="text-end">
@@ -200,6 +127,18 @@
 
 {% block scripts %}
 {% if submissions %}
+<style>
+  .results-table table {
+    color: #fff;
+  }
+  .results-table thead th {
+    color: rgba(255, 255, 255, 0.85);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+  .results-table tbody td {
+    border-color: rgba(255, 255, 255, 0.06);
+  }
+</style>
 <script>
   // Add animation to progress bars
   document.addEventListener('DOMContentLoaded', function() {
