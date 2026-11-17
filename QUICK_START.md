@@ -188,7 +188,6 @@ python
 1. **Read Documentation**:
    - `README.md` - Full documentation
    - `PROJECT_ANALYSIS.md` - Technical deep dive
-   - `CLEANUP_SUMMARY.md` - Project cleanup info
 
 2. **Check Issues**:
    - Search existing GitHub issues
